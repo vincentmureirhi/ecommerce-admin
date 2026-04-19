@@ -11,6 +11,8 @@ import ProductForm from "./pages/ProductForm.jsx";
 import Customers from "./pages/Customers.jsx";
 import CustomerDetail from "./pages/CustomerDetail.jsx";
 import BuyingCustomers from "./pages/BuyingCustomers.jsx";
+import BuyingCustomerDetail from "./pages/BuyingCustomerDetail.jsx";
+import FlashSales from "./pages/FlashSales.jsx";
 import SalesReps from "./pages/SalesReps.jsx";
 import SalesRepDetail from "./pages/SalesRepDetail.jsx";
 import SalesRepTrack from "./pages/SalesRepTrack.jsx";
@@ -249,6 +251,28 @@ export default function App() {
           <AdminProtected>
             <Shell>
               <BuyingCustomers />
+            </Shell>
+          </AdminProtected>
+        }
+      />
+
+      <Route
+        path="/buying-customers/:id"
+        element={
+          <AdminProtected>
+            <Shell>
+              <BuyingCustomerDetail />
+            </Shell>
+          </AdminProtected>
+        }
+      />
+
+      <Route
+        path="/flash-sales"
+        element={
+          <AdminProtected>
+            <Shell>
+              <FlashSales />
             </Shell>
           </AdminProtected>
         }

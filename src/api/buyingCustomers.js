@@ -9,3 +9,13 @@ export async function listBuyingCustomers(filters = {}) {
   const res = await client.get(`/buying-customers${queryStr ? "?" + queryStr : ""}`);
   return res.data;
 }
+
+export async function getBuyingCustomerById(id) {
+  const res = await client.get(`/buying-customers/${id}`);
+  return res.data;
+}
+
+export async function getBuyingCustomerOrders(id) {
+  const res = await client.get(`/buying-customers/${id}/orders`);
+  return res.data;
+}
