@@ -165,12 +165,27 @@ export default function FlashSales() {
     setFormLoading(true);
     setFormErr("");
 
+    const startDate = form.start_date ? new Date(form.start_date) : null;
+    const endDate = form.end_date ? new Date(form.end_date) : null;
+
+    if (startDate && endDate && endDate <= startDate) {
+      setFormErr("End date must be after start date");
+      setFormLoading(false);
+      return;
+    }
+
+    if (form.discount_type === "percentage" && parseFloat(form.discount_value) > 100) {
+      setFormErr("Percentage discount cannot exceed 100%");
+      setFormLoading(false);
+      return;
+    }
+
     const payload = {
       name: form.name.trim(),
       discount_type: form.discount_type,
       discount_value: parseFloat(form.discount_value),
-      start_date: form.start_date ? new Date(form.start_date).toISOString() : null,
-      end_date: form.end_date ? new Date(form.end_date).toISOString() : null,
+      start_date: startDate ? startDate.toISOString() : null,
+      end_date: endDate ? endDate.toISOString() : null,
       description: form.description.trim() || null,
     };
 
@@ -605,6 +620,7 @@ export default function FlashSales() {
                     required
                     type="number"
                     min="0"
+                    max={form.discount_type === "percentage" ? "100" : undefined}
                     step="0.01"
                     value={form.discount_value}
                     onChange={(e) => setForm((f) => ({ ...f, discount_value: e.target.value }))}

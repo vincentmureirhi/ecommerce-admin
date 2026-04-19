@@ -31,6 +31,12 @@ function badgeStyle(status, isDark) {
   };
 }
 
+function getAdminStatus(admin) {
+  if (admin.is_active === false) return "inactive";
+  if (admin.status) return admin.status;
+  return "active";
+}
+
 function roleBadgeStyle(role, isDark) {
   if (role === "superuser" || role === "superadmin") {
     return {
@@ -353,9 +359,10 @@ export default function AdminManagement() {
               </thead>
               <tbody>
                 {rows.map((admin, idx) => {
-                  const statusBadge = badgeStyle(admin.status || (admin.is_active === false ? "inactive" : "active"), isDark);
+                  const adminStatus = getAdminStatus(admin);
+                  const statusBadge = badgeStyle(adminStatus, isDark);
                   const rBadge = roleBadgeStyle(admin.role, isDark);
-                  const isActive = admin.is_active !== false && (admin.status || "active") !== "inactive";
+                  const isActive = adminStatus === "active";
 
                   return (
                     <tr
@@ -405,7 +412,7 @@ export default function AdminManagement() {
                             display: "inline-block",
                           }}
                         >
-                          {isActive ? "active" : "inactive"}
+                          {adminStatus}
                         </span>
                       </td>
 
