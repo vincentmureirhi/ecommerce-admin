@@ -21,6 +21,7 @@ export default function AdminLayout({ children }) {
     { path: "/route-customer-applications", label: "New Route Applications", icon: "📝" },
     { path: "/route-customer-access", label: "Route Portal Access", icon: "🔐" },
     { path: "/buying-customers", label: "Buying Customers", icon: "💰" },
+    { path: "/flash-sales", label: "Flash Sales", icon: "⚡" },
     { path: "/sales-reps", label: "Sales Reps", icon: "👤" },
     { path: "/sales-reps/live-map", label: "Live Rep Map", icon: "🛰️" },
     { path: "/inventory", label: "Inventory", icon: "📈" },
@@ -96,7 +97,11 @@ export default function AdminLayout({ children }) {
 
         <nav style={{ flex: 1 }}>
           {menuItems.map((item) => {
-            if (item.path === "/admin-management" && user?.role !== "superuser") {
+            if (
+              item.path === "/admin-management" &&
+              user?.role !== "superuser" &&
+              user?.role !== "superadmin"
+            ) {
               return null;
             }
 

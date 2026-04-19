@@ -278,7 +278,7 @@ export default function BuyingCustomers() {
                         cursor: "pointer",
                         textDecoration: "underline",
                       }}
-                      onClick={() => nav(`/customers/${customer.id}`)}
+                      onClick={() => nav(`/buying-customers/${customer.id}`)}
                     >
                       {customer.name}
                     </td>
@@ -293,7 +293,7 @@ export default function BuyingCustomers() {
 
                     <td style={{ padding: 12, textAlign: "center" }}>
                       <button
-                        onClick={() => nav(`/orders?customer=${customer.id}`)}
+                        onClick={() => nav(`/buying-customers/${customer.id}`)}
                         style={{
                           background: isDark ? "rgba(14,165,233,0.18)" : "#e0f2fe",
                           color: "#0284c7",
@@ -337,7 +337,7 @@ export default function BuyingCustomers() {
                     <td style={{ padding: 12 }}>
                       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                         <button
-                          onClick={() => nav(`/customers/${customer.id}`)}
+                          onClick={() => nav(`/buying-customers/${customer.id}`)}
                           style={{
                             padding: "6px 12px",
                             background: "#667eea",
@@ -353,7 +353,7 @@ export default function BuyingCustomers() {
                         </button>
 
                         <button
-                          onClick={() => nav(`/orders?customer=${customer.id}`)}
+                          onClick={() => nav(`/buying-customers/${customer.id}`)}
                           style={{
                             padding: "6px 12px",
                             background: "#16a34a",

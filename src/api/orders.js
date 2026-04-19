@@ -46,6 +46,11 @@ export async function getOrderForPrint(id) {
   return res.data;
 }
 
+export async function getOrderPrintHtml(id) {
+  const res = await client.get(`/orders/${id}/print`, { params: { format: "html" } });
+  return res.data;
+}
+
 export async function getOrderStatistics(filters = {}) {
   const params = new URLSearchParams();
   if (filters.start_date) params.append("start_date", filters.start_date);
