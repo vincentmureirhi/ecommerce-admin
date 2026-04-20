@@ -131,7 +131,7 @@ export default function Blog() {
       title: form.title.trim(),
       content: form.content.trim(),
       featured_image_url: form.featured_image_url.trim() || null,
-      product_id: form.product_id ? parseInt(form.product_id, 10) : null,
+      product_id: form.product_id ? (Number.isFinite(parseInt(form.product_id, 10)) ? parseInt(form.product_id, 10) : null) : null,
       status: form.status,
     };
 
@@ -338,7 +338,7 @@ export default function Blog() {
                               whiteSpace: "nowrap",
                             }}
                           >
-                            {post.content.replace(/<[^>]*>/g, "").substring(0, 80)}…
+                            {post.content.substring(0, 80)}…
                           </div>
                         )}
                       </td>

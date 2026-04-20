@@ -153,9 +153,8 @@ export default function TermsConditions() {
                 lineHeight: 1.5,
               }}
             >
-              💡 <strong>Tip:</strong> You can use basic HTML formatting (e.g.{" "}
-              <code>&lt;h2&gt;</code>, <code>&lt;p&gt;</code>, <code>&lt;ul&gt;&lt;li&gt;</code>,{" "}
-              <code>&lt;strong&gt;</code>) to format your content, or write plain text.
+              💡 <strong>Tip:</strong> Write plain text. Line breaks and spacing are preserved. The
+              preview below shows exactly how the content will appear to customers.
             </div>
 
             <label
@@ -219,9 +218,11 @@ export default function TermsConditions() {
                   color: c.text,
                   lineHeight: 1.7,
                   whiteSpace: "pre-wrap",
+                  wordBreak: "break-word",
                 }}
-                dangerouslySetInnerHTML={{ __html: content }}
-              />
+              >
+                {content}
+              </div>
             </div>
           )}
 
