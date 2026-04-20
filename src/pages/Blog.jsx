@@ -131,7 +131,7 @@ export default function Blog() {
       title: form.title.trim(),
       content: form.content.trim(),
       featured_image_url: form.featured_image_url.trim() || null,
-      product_id: form.product_id ? (Number.isFinite(parseInt(form.product_id, 10)) ? parseInt(form.product_id, 10) : null) : null,
+      product_id: (() => { const parsed = parseInt(form.product_id, 10); return form.product_id && parsed > 0 ? parsed : null; })(),
       status: form.status,
     };
 
@@ -542,6 +542,7 @@ export default function Blog() {
                   <input
                     type="number"
                     min="1"
+                    step="1"
                     value={form.product_id}
                     onChange={(e) => setForm((f) => ({ ...f, product_id: e.target.value }))}
                     placeholder="Optional product ID"
