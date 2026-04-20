@@ -369,9 +369,7 @@ export default function SalesRepTrack() {
               <iframe
                 title="Sales rep satellite tracking map"
                 src={mapSrc}
-                width="100%"
-                height="540"
-                style={{ border: 0, borderRadius: 10 }}
+                style={{ width: "100%", height: 540, border: 0, borderRadius: 10, display: "block" }}
                 allowFullScreen
                 loading="lazy"
               />
