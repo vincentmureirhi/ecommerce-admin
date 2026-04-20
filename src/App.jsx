@@ -26,6 +26,8 @@ import RegionDetail from "./pages/RegionDetail.jsx";
 import Locations from "./pages/Locations.jsx";
 import Inventory from "./pages/Inventory.jsx";
 import AdminManagement from "./pages/AdminManagement.jsx";
+import Blog from "./pages/Blog.jsx";
+import TermsConditions from "./pages/TermsConditions.jsx";
 
 import RouteCustomerDashboard from "./pages/RouteCustomerDashboard.jsx";
 import RouteCustomerApply from "./pages/RouteCustomerApply.jsx";
@@ -383,6 +385,28 @@ export default function App() {
           <AdminProtected>
             <Shell>
               <Inventory />
+            </Shell>
+          </AdminProtected>
+        }
+      />
+
+      <Route
+        path="/blog"
+        element={
+          <AdminProtected>
+            <Shell>
+              <Blog />
+            </Shell>
+          </AdminProtected>
+        }
+      />
+
+      <Route
+        path="/terms-conditions"
+        element={
+          <AdminProtected>
+            <Shell>
+              <TermsConditions />
             </Shell>
           </AdminProtected>
         }

@@ -54,19 +54,27 @@ export default function Categories() {
     try {
       setLoading(true);
       setErr("");
-      const [catsRes, deptsRes, prodsRes] = await Promise.all([
+      const [catsRes, prodsRes] = await Promise.all([
         fetch('/api/categories', { headers: { 'Authorization': `Bearer ${token}` } }),
-        fetch('/api/departments', { headers: { 'Authorization': `Bearer ${token}` } }),
         fetch('/api/products', { headers: { 'Authorization': `Bearer ${token}` } })
       ]);
 
       const catsData = await catsRes.json();
-      const deptsData = await deptsRes.json();
       const prodsData = await prodsRes.json();
 
       setCategories(Array.isArray(catsData.data) ? catsData.data : []);
-      setDepartments(Array.isArray(deptsData.data) ? deptsData.data : []);
       setProducts(Array.isArray(prodsData.data) ? prodsData.data : []);
+
+      // Departments endpoint is optional — gracefully handle 404
+      try {
+        const deptsRes = await fetch('/api/departments', { headers: { 'Authorization': `Bearer ${token}` } });
+        if (deptsRes.ok) {
+          const deptsData = await deptsRes.json();
+          setDepartments(Array.isArray(deptsData.data) ? deptsData.data : []);
+        }
+      } catch {
+        // departments endpoint unavailable — continue without it
+      }
     } catch (e) {
       setErr("Failed to load data");
     } finally {
@@ -502,7 +510,7 @@ function MenuItem({ onClick, label, danger, disabled }) {
 function CategoryModal({ title, formData, onNameChange, onFormChange, onSave, onClose, departments, categories, c, isDark }) {
   return (
     <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.5)", display: "flex", justifyContent: "center", alignItems: "center", zIndex: 2000 }} onClick={onClose}>
-      <div style={{ background: c.bg, borderRadius: 8, padding: 30, maxWidth: 500, width: "90%", border: `1px solid ${c.border}` }} onClick={(e) => e.stopPropagation()}>
+      <div style={{ background: c.bg, borderRadius: 8, padding: 24, maxWidth: 440, width: "92%", maxHeight: "88vh", overflowY: "auto", border: `1px solid ${c.border}`, boxShadow: "0 20px 60px rgba(0,0,0,0.3)" }} onClick={(e) => e.stopPropagation()}>
         <h2 style={{ margin: "0 0 20px 0", fontSize: 18, fontWeight: 700, color: c.text }}>{title}</h2>
 
         <div style={{ marginBottom: 15 }}>

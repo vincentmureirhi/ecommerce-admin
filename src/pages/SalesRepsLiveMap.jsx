@@ -447,9 +447,7 @@ export default function SalesRepsLiveMap() {
                   <iframe
                     title="Sales rep live map"
                     src={mapSrc}
-                    width="100%"
-                    height="640"
-                    style={{ border: 0, borderRadius: 10 }}
+                    style={{ width: "100%", height: 640, border: 0, borderRadius: 10, display: "block" }}
                     allowFullScreen
                     loading="lazy"
                   />
