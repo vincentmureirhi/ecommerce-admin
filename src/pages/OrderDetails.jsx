@@ -322,11 +322,8 @@ export default function OrderDetails() {
               style={inputStyle(c)}
             >
               <option value="pending">⏳ Pending</option>
-              <option value="payment_confirmed">✅ Payment Confirmed</option>
-              <option value="order_issued">📋 Order Issued</option>
               <option value="processing">⚙️ Processing</option>
-              <option value="in_transit">🚚 In Transit</option>
-              <option value="delivered">📬 Delivered</option>
+              <option value="dispatched">🚚 Dispatched</option>
               <option value="completed">✔️ Completed</option>
               <option value="cancelled">❌ Cancelled</option>
             </select>

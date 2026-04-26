@@ -30,6 +30,20 @@ function getOrderStatusStyle(status, isDark) {
     };
   }
 
+  if (status === "processing") {
+    return {
+      bg: isDark ? "rgba(59, 130, 246, 0.2)" : "#dbeafe",
+      color: isDark ? "#93c5fd" : "#1d4ed8",
+    };
+  }
+
+  if (status === "dispatched") {
+    return {
+      bg: isDark ? "rgba(139, 92, 246, 0.2)" : "#ede9fe",
+      color: isDark ? "#a78bfa" : "#5b21b6",
+    };
+  }
+
   return {
     bg: isDark ? "rgba(220, 53, 69, 0.2)" : "#f8d7da",
     color: isDark ? "#ff6b6b" : "#721c24",
@@ -362,6 +376,8 @@ export default function Orders() {
           <select value={orderStatus} onChange={(e) => setOrderStatus(e.target.value)} style={inputStyle(c)}>
             <option value="">All Statuses</option>
             <option value="pending">⏳ Pending</option>
+            <option value="processing">⚙️ Processing</option>
+            <option value="dispatched">🚚 Dispatched</option>
             <option value="completed">✅ Completed</option>
             <option value="cancelled">❌ Cancelled</option>
           </select>
