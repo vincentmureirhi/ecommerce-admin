@@ -100,11 +100,26 @@ export default function PriceTiers() {
     <div style={{ background: c.bg, minHeight: "100vh", padding: "20px" }}>
       <div style={{ marginBottom: 30 }}>
         <h1 style={{ marginTop: 0, marginBottom: 5, fontSize: 28, fontWeight: 700, color: c.text }}>
-          💰 Price Tiers
+          📊 Volume Tiers
         </h1>
         <p style={{ margin: 0, color: c.textMuted, fontSize: 13 }}>
-          Manage bulk pricing for your products
+          Manage quantity-based price tiers for products that use Volume Pricing. Select a product below to view or edit its tiers.
         </p>
+      </div>
+
+      <div style={{
+        background: isDark ? "rgba(102, 126, 234, 0.1)" : "#f0f4ff",
+        border: `1px solid ${isDark ? "rgba(102, 126, 234, 0.3)" : "#c7d2fe"}`,
+        borderRadius: 8,
+        padding: "12px 16px",
+        marginBottom: 20,
+        fontSize: 13,
+        color: isDark ? "#a5b4fc" : "#3730a3",
+        lineHeight: 1.6,
+      }}>
+        <strong>Note:</strong> Tiers only apply to products using the <strong>Volume Pricing</strong> rule.
+        Products on <strong>Fixed Price</strong>, <strong>Bulk Discount</strong>, or <strong>Group Wholesale</strong> rules do not use tiers.
+        Products with no pricing rule default to standard retail pricing.
       </div>
 
       {err && (
@@ -130,7 +145,7 @@ export default function PriceTiers() {
         border: `1px solid ${c.border}`,
       }}>
         <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: c.textMuted, marginBottom: 6 }}>
-          Select Product
+          Select Product (Volume Pricing)
         </label>
         <select
           value={selectedProductId}
@@ -185,7 +200,7 @@ export default function PriceTiers() {
             e.currentTarget.style.boxShadow = "none";
           }}
         >
-          {showForm ? "Cancel" : "+ New Tier"}
+          {showForm ? "Cancel" : "+ Add Volume Tier"}
         </button>
       </div>
 
@@ -323,7 +338,7 @@ export default function PriceTiers() {
           color: c.textMuted,
           border: `1px solid ${c.border}`,
         }}>
-          💰 No price tiers for this product
+          📊 No volume tiers defined for this product. Add a tier below to enable quantity-based pricing.
         </div>
       )}
 
