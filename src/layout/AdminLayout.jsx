@@ -28,6 +28,7 @@ export default function AdminLayout({ children }) {
     { path: "/orders", label: "Orders", icon: "🛒" },
     { path: "/payments", label: "Payments", icon: "💳" },
     { path: "/price-tiers", label: "Price Tiers", icon: "💰" },
+    { path: "/pricing-rules", label: "Pricing Rules", icon: "🏷️" },
     { path: "/admin-management", label: "Admin Users", icon: "👨‍💼" },
     { path: "/blog", label: "Blog", icon: "📝" },
     { path: "/terms-conditions", label: "Terms & Conditions", icon: "📜" },
