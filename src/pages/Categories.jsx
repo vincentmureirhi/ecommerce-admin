@@ -1,10 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useTheme } from '../context/ThemeContext';
-import { useAuth } from '../context/AuthContext';
+import client from '../api/client';
 
 export default function Categories() {
   const { isDark } = useTheme();
-  const { token } = useAuth();
 
   const colors = {
     light: { bg: '#f8f9fa', card: '#ffffff', text: '#1a1a1a', border: '#e5e7eb', muted: '#666' },
@@ -55,23 +54,17 @@ export default function Categories() {
       setLoading(true);
       setErr("");
       const [catsRes, prodsRes] = await Promise.all([
-        fetch('/api/categories', { headers: { 'Authorization': `Bearer ${token}` } }),
-        fetch('/api/products', { headers: { 'Authorization': `Bearer ${token}` } })
+        client.get('/categories'),
+        client.get('/products')
       ]);
 
-      const catsData = await catsRes.json();
-      const prodsData = await prodsRes.json();
-
-      setCategories(Array.isArray(catsData.data) ? catsData.data : []);
-      setProducts(Array.isArray(prodsData.data) ? prodsData.data : []);
+      setCategories(Array.isArray(catsRes.data?.data) ? catsRes.data.data : []);
+      setProducts(Array.isArray(prodsRes.data?.data) ? prodsRes.data.data : []);
 
       // Departments endpoint is optional — gracefully handle 404
       try {
-        const deptsRes = await fetch('/api/departments', { headers: { 'Authorization': `Bearer ${token}` } });
-        if (deptsRes.ok) {
-          const deptsData = await deptsRes.json();
-          setDepartments(Array.isArray(deptsData.data) ? deptsData.data : []);
-        }
+        const deptsRes = await client.get('/departments');
+        setDepartments(Array.isArray(deptsRes.data?.data) ? deptsRes.data.data : []);
       } catch {
         // departments endpoint unavailable — continue without it
       }
@@ -107,32 +100,21 @@ export default function Categories() {
     }
 
     try {
-      const response = await fetch('/api/categories', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          name: formData.name.trim(),
-          slug: formData.slug,
-          description: formData.description.trim(),
-          status: formData.status,
-          display_order: parseInt(formData.display_order) || 0,
-          department_id: formData.department_id ? parseInt(formData.department_id) : null,
-          parent_category_id: formData.parent_category_id ? parseInt(formData.parent_category_id) : null
-        })
+      await client.post('/categories', {
+        name: formData.name.trim(),
+        slug: formData.slug,
+        description: formData.description.trim(),
+        status: formData.status,
+        display_order: parseInt(formData.display_order) || 0,
+        department_id: formData.department_id ? parseInt(formData.department_id) : null,
+        parent_category_id: formData.parent_category_id ? parseInt(formData.parent_category_id) : null
       });
 
-      if (response.ok) {
-        setSuccessMsg("Category created successfully!");
-        setShowAddModal(false);
-        resetForm();
-        loadData();
-        setTimeout(() => setSuccessMsg(""), 3000);
-      } else {
-        setErr("Failed to create category");
-      }
+      setSuccessMsg("Category created successfully!");
+      setShowAddModal(false);
+      resetForm();
+      loadData();
+      setTimeout(() => setSuccessMsg(""), 3000);
     } catch (e) {
       setErr("Error creating category");
     }
@@ -145,32 +127,21 @@ export default function Categories() {
     }
 
     try {
-      const response = await fetch(`/api/categories/${editingId}`, {
-        method: 'PUT',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          name: formData.name.trim(),
-          slug: formData.slug,
-          description: formData.description.trim(),
-          status: formData.status,
-          display_order: parseInt(formData.display_order) || 0,
-          department_id: formData.department_id ? parseInt(formData.department_id) : null,
-          parent_category_id: formData.parent_category_id ? parseInt(formData.parent_category_id) : null
-        })
+      await client.put(`/categories/${editingId}`, {
+        name: formData.name.trim(),
+        slug: formData.slug,
+        description: formData.description.trim(),
+        status: formData.status,
+        display_order: parseInt(formData.display_order) || 0,
+        department_id: formData.department_id ? parseInt(formData.department_id) : null,
+        parent_category_id: formData.parent_category_id ? parseInt(formData.parent_category_id) : null
       });
 
-      if (response.ok) {
-        setSuccessMsg("Category updated successfully!");
-        setShowEditModal(false);
-        resetForm();
-        loadData();
-        setTimeout(() => setSuccessMsg(""), 3000);
-      } else {
-        setErr("Failed to update category");
-      }
+      setSuccessMsg("Category updated successfully!");
+      setShowEditModal(false);
+      resetForm();
+      loadData();
+      setTimeout(() => setSuccessMsg(""), 3000);
     } catch (e) {
       setErr("Error updating category");
     }
@@ -178,20 +149,13 @@ export default function Categories() {
 
   const handleDeleteCategory = async () => {
     try {
-      const response = await fetch(`/api/categories/${deletingCategory.id}`, {
-        method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
+      await client.delete(`/categories/${deletingCategory.id}`);
 
-      if (response.ok) {
-        setSuccessMsg("Category deleted successfully!");
-        setShowDeleteModal(false);
-        setDeletingCategory(null);
-        loadData();
-        setTimeout(() => setSuccessMsg(""), 3000);
-      } else {
-        setErr("Failed to delete category");
-      }
+      setSuccessMsg("Category deleted successfully!");
+      setShowDeleteModal(false);
+      setDeletingCategory(null);
+      loadData();
+      setTimeout(() => setSuccessMsg(""), 3000);
     } catch (e) {
       setErr("Error deleting category");
     }
