@@ -7,6 +7,7 @@ import Dashboard from "./pages/Dashboard.jsx";
 import Products from "./pages/Products.jsx";
 import Categories from "./pages/Categories.jsx";
 import PriceTiers from "./pages/PriceTiers.jsx";
+import PricingRules from "./pages/PricingRules.jsx";
 import ProductForm from "./pages/ProductForm.jsx";
 import Customers from "./pages/Customers.jsx";
 import CustomerDetail from "./pages/CustomerDetail.jsx";
@@ -319,6 +320,17 @@ export default function App() {
           <AdminProtected>
             <Shell>
               <SalesRepTrack />
+            </Shell>
+          </AdminProtected>
+        }
+      />
+
+      <Route
+        path="/pricing-rules"
+        element={
+          <AdminProtected>
+            <Shell>
+              <PricingRules />
             </Shell>
           </AdminProtected>
         }

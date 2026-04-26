@@ -3,6 +3,8 @@ import { useNavigate, useParams } from "react-router-dom";
 import { createProduct, getProductById, updateProduct } from "../api/products";
 import { listCategories } from "../api/categories";
 import { listSuppliers } from "../api/suppliers";
+import { listPricingRules } from "../api/pricingRules";
+import { RULE_TYPE_LABELS, RULE_TYPE_HINTS } from "../lib/pricingRuleConstants";
 import { useTheme } from "../context/ThemeContext";
 
 const CLOUDINARY_CLOUD_NAME = "dwvmsjgvd";
@@ -151,6 +153,7 @@ export default function ProductForm() {
 
   const [suppliers, setSuppliers] = useState([]);
   const [categories, setCategories] = useState([]);
+  const [pricingRules, setPricingRules] = useState([]);
   const [err, setErr] = useState("");
   const [loading, setLoading] = useState(true);
   const [uploadedImages, setUploadedImages] = useState([]);
@@ -171,7 +174,7 @@ export default function ProductForm() {
     cost_price: "",
     reorder_level: "10",
     current_stock: "0",
-    is_combo_eligible: false,
+    pricing_rule_id: "",
     requires_manual_price: false,
     is_active: true,
     image_url: "",
@@ -247,9 +250,10 @@ export default function ProductForm() {
       setLoading(true);
       setErr("");
 
-      const [supplierResponse, categoryResponse] = await Promise.all([
+      const [supplierResponse, categoryResponse, rulesResponse] = await Promise.all([
         listSuppliers(),
         listCategories(),
+        listPricingRules().catch(() => ({ data: [] })),
       ]);
 
       const supplierRows =
@@ -262,8 +266,14 @@ export default function ProductForm() {
         categoryResponse?.data ||
         [];
 
+      const rulesRows =
+        rulesResponse?.data?.data ||
+        rulesResponse?.data ||
+        [];
+
       setSuppliers(Array.isArray(supplierRows) ? supplierRows : []);
       setCategories(Array.isArray(categoryRows) ? categoryRows : []);
+      setPricingRules(Array.isArray(rulesRows) ? rulesRows : []);
 
       if (id) {
         const productResponse = await getProductById(id);
@@ -287,7 +297,7 @@ export default function ProductForm() {
             cost_price: product.cost_price != null ? String(product.cost_price) : "",
             reorder_level: String(product.reorder_level || 10),
             current_stock: String(product.current_stock || 0),
-            is_combo_eligible: product.is_combo_eligible === true,
+            pricing_rule_id: product.pricing_rule_id ? String(product.pricing_rule_id) : "",
             requires_manual_price: product.requires_manual_price === true,
             is_active: product.is_active !== false,
             image_url: product.image_url || "",
@@ -443,7 +453,7 @@ export default function ProductForm() {
         cost_price: form.cost_price ? Number(form.cost_price) : null,
         reorder_level: Math.max(0, Number(form.reorder_level) || 10),
         current_stock: Math.max(0, Number(form.current_stock) || 0),
-        is_combo_eligible: form.is_combo_eligible === true,
+        pricing_rule_id: form.pricing_rule_id ? parseInt(form.pricing_rule_id, 10) : null,
         requires_manual_price: form.requires_manual_price === true,
         is_active: form.is_active === true,
         image_url: form.image_url || null,
@@ -898,7 +908,7 @@ export default function ProductForm() {
 
           <PageCard
             title="Options"
-            subtitle="Toggle the product status and pricing rules clearly."
+            subtitle="Toggle the product status and assign a pricing rule."
             c={c}
           >
             <FormGrid>
@@ -930,29 +940,113 @@ export default function ProductForm() {
               >
                 <input
                   type="checkbox"
-                  checked={form.is_combo_eligible}
-                  onChange={(e) => updateField("is_combo_eligible", e.target.checked)}
-                />
-                Eligible for combo pricing
-              </label>
-
-              <label
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 10,
-                  color: c.text,
-                  fontWeight: 700,
-                }}
-              >
-                <input
-                  type="checkbox"
                   checked={form.requires_manual_price}
                   onChange={(e) => updateField("requires_manual_price", e.target.checked)}
                 />
                 Requires manual price approval
               </label>
             </FormGrid>
+
+            <div style={{ marginTop: 18 }}>
+              <div>
+                <label
+                  style={{
+                    display: "block",
+                    marginBottom: 6,
+                    fontSize: 13,
+                    fontWeight: 700,
+                    color: c.text,
+                  }}
+                >
+                  Pricing Rule
+                </label>
+                <select
+                  value={form.pricing_rule_id}
+                  onChange={(e) => updateField("pricing_rule_id", e.target.value)}
+                  style={inputStyle(c, isDark)}
+                >
+                  <option value="">— No pricing rule (legacy pricing) —</option>
+                  {pricingRules
+                    .filter((r) => r.is_active !== false || String(r.id) === form.pricing_rule_id)
+                    .map((rule) => (
+                      <option key={rule.id} value={rule.id}>
+                        {RULE_TYPE_LABELS[rule.rule_type]
+                          ? `[${RULE_TYPE_LABELS[rule.rule_type]}] ${rule.name}`
+                          : rule.name}
+                        {rule.is_active === false ? " (inactive)" : ""}
+                      </option>
+                    ))}
+                </select>
+
+                {/* Contextual guidance based on selected rule */}
+                {(() => {
+                  const selectedRule = pricingRules.find(
+                    (r) => String(r.id) === form.pricing_rule_id
+                  );
+                  if (!selectedRule) {
+                    return (
+                      <div
+                        style={{
+                          marginTop: 8,
+                          fontSize: 12,
+                          color: c.muted,
+                          lineHeight: 1.6,
+                        }}
+                      >
+                        No pricing rule assigned. Product uses legacy retail/wholesale pricing
+                        fields above.
+                      </div>
+                    );
+                  }
+                  const hint = RULE_TYPE_HINTS[selectedRule.rule_type];
+                  const isTiered = selectedRule.rule_type === "TIERED";
+                  return (
+                    <div
+                      style={{
+                        marginTop: 8,
+                        padding: "10px 14px",
+                        borderRadius: 10,
+                        background: isDark ? "rgba(102,126,234,0.12)" : "#eff6ff",
+                        border: `1px solid ${isDark ? "rgba(102,126,234,0.3)" : "#bfdbfe"}`,
+                        fontSize: 12,
+                        color: isDark ? "#93c5fd" : "#1d4ed8",
+                        lineHeight: 1.6,
+                      }}
+                    >
+                      <strong>{RULE_TYPE_LABELS[selectedRule.rule_type] || selectedRule.rule_type}:</strong>{" "}
+                      {hint}
+                      {isTiered && id ? (
+                        <>
+                          {" "}
+                          <a
+                            href="/price-tiers"
+                            style={{
+                              color: isDark ? "#93c5fd" : "#2563eb",
+                              fontWeight: 700,
+                              textDecoration: "underline",
+                            }}
+                          >
+                            Manage tiers →
+                          </a>
+                        </>
+                      ) : null}
+                    </div>
+                  );
+                })()}
+
+                {pricingRules.length === 0 && (
+                  <div style={{ marginTop: 8, fontSize: 12, color: c.muted }}>
+                    No pricing rules available.{" "}
+                    <a
+                      href="/pricing-rules"
+                      style={{ color: "#667eea", fontWeight: 700 }}
+                    >
+                      Create pricing rules →
+                    </a>
+                  </div>
+                )}
+              </div>
+            </div>
           </PageCard>
 
           <div
