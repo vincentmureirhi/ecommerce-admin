@@ -171,7 +171,6 @@ export default function ProductForm() {
     cost_price: "",
     reorder_level: "10",
     current_stock: "0",
-    is_combo_eligible: false,
     requires_manual_price: false,
     is_active: true,
     image_url: "",
@@ -287,7 +286,6 @@ export default function ProductForm() {
             cost_price: product.cost_price != null ? String(product.cost_price) : "",
             reorder_level: String(product.reorder_level || 10),
             current_stock: String(product.current_stock || 0),
-            is_combo_eligible: product.is_combo_eligible === true,
             requires_manual_price: product.requires_manual_price === true,
             is_active: product.is_active !== false,
             image_url: product.image_url || "",
@@ -443,7 +441,6 @@ export default function ProductForm() {
         cost_price: form.cost_price ? Number(form.cost_price) : null,
         reorder_level: Math.max(0, Number(form.reorder_level) || 10),
         current_stock: Math.max(0, Number(form.current_stock) || 0),
-        is_combo_eligible: form.is_combo_eligible === true,
         requires_manual_price: form.requires_manual_price === true,
         is_active: form.is_active === true,
         image_url: form.image_url || null,
@@ -658,7 +655,7 @@ export default function ProductForm() {
 
           <PageCard
             title="Pricing"
-            subtitle="Set clean pricing for retail and wholesale without squeezing the screen on phone."
+            subtitle="Set the retail and wholesale prices. Products without a pricing rule use retail pricing by default. For volume-based tiered pricing, assign the product in the Volume Tiers section after saving."
             c={c}
           >
             <FormGrid>
@@ -700,7 +697,7 @@ export default function ProductForm() {
 
               <Field
                 label="Minimum wholesale quantity"
-                hint="Smallest quantity allowed for wholesale pricing."
+                hint="Minimum order quantity to qualify for the wholesale price above."
                 c={c}
               >
                 <input
@@ -898,7 +895,7 @@ export default function ProductForm() {
 
           <PageCard
             title="Options"
-            subtitle="Toggle the product status and pricing rules clearly."
+            subtitle="Toggle product visibility and approval requirements."
             c={c}
           >
             <FormGrid>
@@ -917,23 +914,6 @@ export default function ProductForm() {
                   onChange={(e) => updateField("is_active", e.target.checked)}
                 />
                 Active product
-              </label>
-
-              <label
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 10,
-                  color: c.text,
-                  fontWeight: 700,
-                }}
-              >
-                <input
-                  type="checkbox"
-                  checked={form.is_combo_eligible}
-                  onChange={(e) => updateField("is_combo_eligible", e.target.checked)}
-                />
-                Eligible for combo pricing
               </label>
 
               <label
