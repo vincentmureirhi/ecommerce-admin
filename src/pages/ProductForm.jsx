@@ -4,23 +4,8 @@ import { createProduct, getProductById, updateProduct } from "../api/products";
 import { listCategories } from "../api/categories";
 import { listSuppliers } from "../api/suppliers";
 import { listPricingRules } from "../api/pricingRules";
+import { RULE_TYPE_LABELS, RULE_TYPE_HINTS } from "../lib/pricingRuleConstants";
 import { useTheme } from "../context/ThemeContext";
-
-const RULE_TYPE_LABELS = {
-  CONSTANT: "Fixed Price",
-  SKU_THRESHOLD: "Bulk Discount",
-  GROUP_THRESHOLD: "Group Wholesale",
-  TIERED: "Volume Pricing",
-};
-
-const RULE_TYPE_HINTS = {
-  CONSTANT: "This product is always sold at a fixed price. No quantity-based switch applies.",
-  SKU_THRESHOLD: "Wholesale price unlocks when this SKU's quantity meets the rule threshold.",
-  GROUP_THRESHOLD:
-    "Wholesale price unlocks when total quantity across all products sharing this rule meets the threshold.",
-  TIERED:
-    "Pricing is controlled by quantity tiers. Use the Price Tiers page to manage the tiers for this product.",
-};
 
 const CLOUDINARY_CLOUD_NAME = "dwvmsjgvd";
 const CLOUDINARY_UPLOAD_PRESET = "ecommerce_products";

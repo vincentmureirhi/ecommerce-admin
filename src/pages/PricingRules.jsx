@@ -6,25 +6,12 @@ import {
   updatePricingRule,
   deletePricingRule,
 } from "../api/pricingRules";
-
-const RULE_TYPE_LABELS = {
-  CONSTANT: "Fixed Price",
-  SKU_THRESHOLD: "Bulk Discount",
-  GROUP_THRESHOLD: "Group Wholesale",
-  TIERED: "Volume Pricing",
-};
-
-const RULE_TYPE_DESCRIPTIONS = {
-  CONSTANT: "Product is always sold at a fixed price regardless of quantity.",
-  SKU_THRESHOLD:
-    "Wholesale price applies when this SKU's quantity meets the threshold.",
-  GROUP_THRESHOLD:
-    "Wholesale price applies when combined quantity across all products sharing this rule meets the threshold.",
-  TIERED:
-    "Pricing is determined by tiered quantity bands. Manage tiers on the Price Tiers page.",
-};
-
-const RULE_TYPES = Object.keys(RULE_TYPE_LABELS);
+import {
+  RULE_TYPE_LABELS,
+  RULE_TYPE_DESCRIPTIONS,
+  RULE_TYPES,
+  ruleNeedsThreshold,
+} from "../lib/pricingRuleConstants";
 
 const EMPTY_FORM = {
   name: "",
@@ -148,8 +135,7 @@ export default function PricingRules() {
       setFormErr("Rule type is required.");
       return;
     }
-    const needsThreshold =
-      form.rule_type === "SKU_THRESHOLD" || form.rule_type === "GROUP_THRESHOLD";
+    const needsThreshold = ruleNeedsThreshold(form.rule_type);
     if (needsThreshold && (!form.threshold_qty || Number(form.threshold_qty) < 1)) {
       setFormErr("Threshold quantity must be at least 1 for this rule type.");
       return;
@@ -223,8 +209,7 @@ export default function PricingRules() {
     outline: "none",
   };
 
-  const needsThreshold =
-    form.rule_type === "SKU_THRESHOLD" || form.rule_type === "GROUP_THRESHOLD";
+  const needsThreshold = ruleNeedsThreshold(form.rule_type);
 
   return (
     <div style={{ minHeight: "100vh", background: c.bg, padding: 16 }}>
