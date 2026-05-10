@@ -258,6 +258,21 @@ export default function SalesRepDetail() {
             📍 Track Rep
           </button>
 
+          <button
+            onClick={() => nav(`/orders?sales_rep=${rep.id}`)}
+            style={{
+              padding: "10px 14px",
+              borderRadius: 8,
+              border: "none",
+              background: "#16a34a",
+              color: "white",
+              fontWeight: 700,
+              cursor: "pointer",
+            }}
+          >
+            📦 View All Orders
+          </button>
+
           <div
             style={{
               padding: "8px 12px",
@@ -316,6 +331,12 @@ export default function SalesRepDetail() {
         <SummaryCard title="Total Sales" value={formatCurrency(rep.total_sales || 0)} subtitle="Revenue from orders taken" c={c} />
         <SummaryCard title="Avg Order Value" value={formatCurrency(rep.avg_order_value || 0)} subtitle="Average value per order" c={c} />
         <SummaryCard title="Customers Served" value={rep.ordering_customer_count || 0} subtitle="Distinct customers served" c={c} />
+        <SummaryCard
+          title="Route Customers"
+          value={rep.customers ? rep.customers.filter((c) => c.customer_type === "route").length : 0}
+          subtitle="Route-type customers assigned"
+          c={c}
+        />
         <SummaryCard title="Completed Orders" value={rep.completed_orders || 0} subtitle="Orders marked completed" c={c} />
         <SummaryCard title="Pending Orders" value={rep.pending_orders || 0} subtitle="Orders still pending" c={c} />
         <SummaryCard title="Last Order" value={formatDate(rep.last_order_date)} subtitle="Most recent order activity" c={c} />
@@ -405,9 +426,35 @@ export default function SalesRepDetail() {
       </div>
 
       <div style={{ ...cardStyle, marginBottom: 20 }}>
-        <h3 style={{ marginTop: 0, marginBottom: 14, color: c.text, fontSize: 18 }}>
-          Customers Served by {rep.name}
-        </h3>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            gap: 12,
+            marginBottom: 14,
+            flexWrap: "wrap",
+          }}
+        >
+          <h3 style={{ margin: 0, color: c.text, fontSize: 18 }}>
+            Customers Served by {rep.name}
+          </h3>
+          <button
+            onClick={() => nav(`/customers?sales_rep=${rep.id}`)}
+            style={{
+              padding: "7px 12px",
+              background: "#0ea5e9",
+              color: "white",
+              border: "none",
+              borderRadius: 8,
+              cursor: "pointer",
+              fontSize: 12,
+              fontWeight: 700,
+            }}
+          >
+            View All Customers →
+          </button>
+        </div>
 
         {rep.customers?.length ? (
           <div style={{ overflowX: "auto" }}>
@@ -458,7 +505,7 @@ export default function SalesRepDetail() {
                           color: customer.customer_type === "route" ? "#2563eb" : "#16a34a",
                         }}
                       >
-                        {customer.customer_type === "route" ? "Region" : "Normal"}
+                        {customer.customer_type === "route" ? "Route Customer" : "Normal"}
                       </span>
                     </td>
                     <td style={{ padding: "10px 8px", color: c.textMuted }}>{customer.location_name || "—"}</td>
@@ -515,9 +562,35 @@ export default function SalesRepDetail() {
       </div>
 
       <div style={{ ...cardStyle, marginBottom: 20 }}>
-        <h3 style={{ marginTop: 0, marginBottom: 14, color: c.text, fontSize: 18 }}>
-          Orders Taken by {rep.name}
-        </h3>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            gap: 12,
+            marginBottom: 14,
+            flexWrap: "wrap",
+          }}
+        >
+          <h3 style={{ margin: 0, color: c.text, fontSize: 18 }}>
+            Orders Taken by {rep.name}
+          </h3>
+          <button
+            onClick={() => nav(`/orders?sales_rep=${rep.id}`)}
+            style={{
+              padding: "7px 12px",
+              background: "#16a34a",
+              color: "white",
+              border: "none",
+              borderRadius: 8,
+              cursor: "pointer",
+              fontSize: 12,
+              fontWeight: 700,
+            }}
+          >
+            View All Orders →
+          </button>
+        </div>
 
         {rep.orders?.length ? (
           <div style={{ overflowX: "auto" }}>

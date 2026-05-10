@@ -112,6 +112,8 @@ export default function SalesReps() {
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [editId, setEditId] = useState(null);
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
   const [form, setForm] = useState({
     name: "",
     phone_number: "",
@@ -206,6 +208,20 @@ export default function SalesReps() {
       liveTracked,
     };
   }, [rows]);
+
+  const filteredRows = useMemo(() => {
+    return rows.filter((rep) => {
+      if (statusFilter && rep.status !== statusFilter) return false;
+      if (search.trim()) {
+        const q = search.trim().toLowerCase();
+        const inName = (rep.name || "").toLowerCase().includes(q);
+        const inPhone = (rep.phone_number || "").toLowerCase().includes(q);
+        const inEmail = (rep.email || "").toLowerCase().includes(q);
+        if (!inName && !inPhone && !inEmail) return false;
+      }
+      return true;
+    });
+  }, [rows, search, statusFilter]);
 
   useEffect(() => {
     loadData();
@@ -305,7 +321,7 @@ export default function SalesReps() {
         </div>
       )}
 
-      <div style={{ marginBottom: 20, display: "flex", gap: 10, flexWrap: "wrap" }}>
+      <div style={{ marginBottom: 20, display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
         <button
           onClick={() => {
             setShowForm(!showForm);
@@ -347,6 +363,58 @@ export default function SalesReps() {
         >
           Refresh
         </button>
+
+        <input
+          type="text"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search by name, phone, email..."
+          style={{
+            padding: "10px 14px",
+            borderRadius: 6,
+            border: `1px solid ${c.border}`,
+            background: c.inputBg,
+            color: c.text,
+            fontSize: 13,
+            minWidth: 220,
+          }}
+        />
+
+        <select
+          value={statusFilter}
+          onChange={(e) => setStatusFilter(e.target.value)}
+          style={{
+            padding: "10px 14px",
+            borderRadius: 6,
+            border: `1px solid ${c.border}`,
+            background: c.inputBg,
+            color: c.text,
+            fontSize: 13,
+            cursor: "pointer",
+          }}
+        >
+          <option value="">All Statuses</option>
+          <option value="active">Active Only</option>
+          <option value="inactive">Inactive Only</option>
+        </select>
+
+        {(search || statusFilter) && (
+          <button
+            onClick={() => { setSearch(""); setStatusFilter(""); }}
+            style={{
+              padding: "10px 14px",
+              background: "#dc3545",
+              color: "white",
+              border: "none",
+              borderRadius: 6,
+              cursor: "pointer",
+              fontSize: 13,
+              fontWeight: 600,
+            }}
+          >
+            Clear Filters
+          </button>
+        )}
       </div>
 
       {showForm && (
@@ -498,7 +566,7 @@ export default function SalesReps() {
         </div>
       )}
 
-      {rows.length === 0 && !loading && (
+      {filteredRows.length === 0 && !loading && (
         <div
           style={{
             textAlign: "center",
@@ -509,11 +577,11 @@ export default function SalesReps() {
             border: `1px solid ${c.border}`,
           }}
         >
-          👤 No sales reps found
+          👤 {rows.length === 0 ? "No sales reps found" : "No reps match your filters"}
         </div>
       )}
 
-      {rows.length > 0 && (
+      {filteredRows.length > 0 && (
         <div
           style={{
             background: c.card,
@@ -542,7 +610,7 @@ export default function SalesReps() {
               </tr>
             </thead>
             <tbody>
-              {rows.map((rep, idx) => {
+              {filteredRows.map((rep, idx) => {
                 const freshness = getFreshness(rep.latest_location_recorded_at);
                 const badge = getBadgeStyles(freshness.tone, isDark);
 
@@ -700,6 +768,23 @@ export default function SalesReps() {
                           title="Track sales rep"
                         >
                           📍
+                        </button>
+
+                        <button
+                          onClick={() => nav(`/customers?sales_rep=${rep.id}`)}
+                          style={{
+                            padding: "5px 10px",
+                            background: "#d97706",
+                            color: "white",
+                            border: "none",
+                            borderRadius: 4,
+                            cursor: "pointer",
+                            fontSize: 11,
+                            fontWeight: 600,
+                          }}
+                          title="View this rep's customers"
+                        >
+                          👥
                         </button>
 
                         <button
