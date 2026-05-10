@@ -40,7 +40,7 @@ export async function listLatestSalesRepLocations() {
   return res.data;
 }
 
-export async function resetSalesRepPassword(id, data = {}) {
-  const res = await client.post(`/sales-reps/${id}/reset-password`, data);
+export async function resetSalesRepPassword(id) {
+  const res = await client.post(`/sales-reps/${id}/reset-password`);
   return res.data;
 }

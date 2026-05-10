@@ -155,6 +155,8 @@ export default function SalesReps() {
     if (!form.name.trim()) return setErr("Name is required");
 
     try {
+      // Both full_name/name and phone/phone_number are sent to support the backend migration
+      // period where the new columns (full_name, phone) coexist with legacy (name, phone_number).
       const payload = {
         full_name: form.name.trim(),
         name: form.name.trim(),
@@ -363,7 +365,7 @@ export default function SalesReps() {
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "repeat(6, minmax(0, 1fr))",
+          gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
           gap: 14,
           marginBottom: 20,
         }}
@@ -1148,7 +1150,7 @@ export default function SalesReps() {
                 color: isDark ? "#ff6b6b" : "#991b1b",
               }}
             >
-              ⚠️ <strong>This password is shown only once.</strong> Copy and share it with the rep securely. The rep must change it on first login. Do not share it via insecure channels.
+              ⚠️ <strong>This password is shown only once.</strong> Copy and share it with the rep securely. The rep must change it on their first login. Do not share it via insecure channels.
             </div>
 
             <button
