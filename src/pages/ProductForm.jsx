@@ -14,16 +14,16 @@ function toSafeNumber(value, fallback = 0) {
 }
 
 function toPriceLabel(value) {
-  return `KES ${Number(value || 0).toLocaleString(undefined, {
+  return `KSh ${Number(value || 0).toLocaleString(undefined, {
     minimumFractionDigits: 0,
     maximumFractionDigits: 2,
   })}`;
 }
 
-function resolveThresholdQty(primary, fallback) {
-  const primaryNum = Number(primary);
+function resolveThresholdQty(candidateThreshold, fallbackThreshold) {
+  const primaryNum = Number(candidateThreshold);
   if (Number.isFinite(primaryNum) && primaryNum > 0) return primaryNum;
-  const fallbackNum = Number(fallback);
+  const fallbackNum = Number(fallbackThreshold);
   if (Number.isFinite(fallbackNum) && fallbackNum > 0) return fallbackNum;
   return null;
 }
@@ -234,22 +234,25 @@ export default function ProductForm() {
     };
   }, [form.retail_price, form.cost_price]);
 
+  const pricingThresholdQty = useMemo(
+    () => resolveThresholdQty(form.min_qty_wholesale, pricingMeta.wholesale_threshold_qty),
+    [form.min_qty_wholesale, pricingMeta.wholesale_threshold_qty]
+  );
+
   const pricingSummary = useMemo(() => {
-    const thresholdQty = resolveThresholdQty(form.min_qty_wholesale, pricingMeta.wholesale_threshold_qty);
     return buildPricingSummary({
       retailPrice: form.retail_price,
       wholesalePrice: form.wholesale_price,
-      thresholdQty,
+      thresholdQty: pricingThresholdQty,
       pricingRuleId: pricingMeta.pricing_rule_id,
       pricingRuleType: pricingMeta.pricing_rule_type,
     });
   }, [
-    form.min_qty_wholesale,
     form.retail_price,
     form.wholesale_price,
+    pricingThresholdQty,
     pricingMeta.pricing_rule_id,
     pricingMeta.pricing_rule_type,
-    pricingMeta.wholesale_threshold_qty,
   ]);
 
   function updateField(key, value) {
@@ -813,7 +816,7 @@ export default function ProductForm() {
               {pricingMeta.pricing_rule_type === "SKU_THRESHOLD" ? (
                 <div style={{ fontSize: 12, color: c.muted }}>
                   SKU_THRESHOLD behavior: wholesale price applies from{" "}
-                  {resolveThresholdQty(form.min_qty_wholesale, pricingMeta.wholesale_threshold_qty) || "—"} pcs.
+                  {pricingThresholdQty || "—"} pcs.
                 </div>
               ) : null}
             </div>

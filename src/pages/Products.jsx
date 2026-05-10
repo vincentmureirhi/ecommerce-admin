@@ -8,7 +8,7 @@ function money(value) {
 }
 
 function toPriceLabel(value) {
-  return `KES ${Number(value || 0).toLocaleString(undefined, {
+  return `KSh ${Number(value || 0).toLocaleString(undefined, {
     minimumFractionDigits: 0,
     maximumFractionDigits: 2,
   })}`;
@@ -933,7 +933,7 @@ export default function Products() {
                         gap: 6,
                       }}
                     >
-                      <div style={{ fontSize: 11, fontWeight: 800, color: c.muted }}>
+                      <div style={{ fontSize: 12, fontWeight: 800, color: c.muted }}>
                         Pricing behavior
                       </div>
                       <div style={{ fontSize: 13, fontWeight: 700, color: c.text }}>
