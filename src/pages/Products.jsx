@@ -7,6 +7,40 @@ function money(value) {
   return `KSh ${Number(value || 0).toLocaleString()}`;
 }
 
+function toPriceLabel(value) {
+  return `KES ${Number(value || 0).toLocaleString(undefined, {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  })}`;
+}
+
+function getPricingThreshold(product) {
+  const threshold =
+    product.wholesale_threshold_qty ?? product.min_qty_wholesale ?? product.min_wholesale_qty;
+  const qty = Number(threshold);
+  return Number.isFinite(qty) && qty > 0 ? qty : null;
+}
+
+function getPricingSummary(product) {
+  const retail = toPriceLabel(product.retail_price);
+  const wholesale = Number(product.wholesale_price);
+  const hasWholesale = Number.isFinite(wholesale) && wholesale > 0;
+  const hasRule = product.pricing_rule_id != null;
+  const threshold = getPricingThreshold(product);
+
+  if (!hasWholesale) return "Retail only";
+  if (product.pricing_rule_type === "SKU_THRESHOLD" && threshold) {
+    return `Retail: ${retail} | Wholesale: ${toPriceLabel(wholesale)} from ${threshold} pcs`;
+  }
+  if (!hasRule) return "Wholesale configured, no active rule";
+  return `Retail: ${retail} | Wholesale: ${toPriceLabel(wholesale)}`;
+}
+
+function getPricingRuleState(product) {
+  if (product.pricing_rule_id == null) return "Legacy / no pricing rule";
+  return "Linked pricing rule";
+}
+
 function formatDate(value) {
   if (!value) return "—";
   const d = new Date(value);
@@ -891,6 +925,27 @@ export default function Products() {
 
                     <div
                       style={{
+                        border: `1px solid ${c.border}`,
+                        borderRadius: 14,
+                        padding: 12,
+                        background: isDark ? "#0f172a" : "#f8fafc",
+                        display: "grid",
+                        gap: 6,
+                      }}
+                    >
+                      <div style={{ fontSize: 11, fontWeight: 800, color: c.muted }}>
+                        Pricing behavior
+                      </div>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: c.text }}>
+                        {getPricingSummary(product)}
+                      </div>
+                      <div style={{ fontSize: 12, color: c.muted }}>
+                        {getPricingRuleState(product)}
+                      </div>
+                    </div>
+
+                    <div
+                      style={{
                         display: "flex",
                         justifyContent: "space-between",
                         gap: 10,
@@ -1320,6 +1375,20 @@ function ProductDetailDrawer({ product, categories, suppliers, onClose, c, isDar
           <InfoBlock label="Supplier" value={supplierName} c={c} />
           <InfoBlock label="Retail price" value={money(product.retail_price)} c={c} />
           <InfoBlock label="Wholesale price" value={money(product.wholesale_price)} c={c} />
+          <InfoBlock label="Pricing summary" value={getPricingSummary(product)} c={c} />
+          <InfoBlock label="Pricing rule status" value={getPricingRuleState(product)} c={c} />
+          <InfoBlock
+            label="Pricing rule ID"
+            value={product.pricing_rule_id != null ? String(product.pricing_rule_id) : "—"}
+            c={c}
+          />
+          <InfoBlock label="Pricing rule type" value={product.pricing_rule_type || "—"} c={c} />
+          <InfoBlock label="Pricing rule name" value={product.pricing_rule_name || "—"} c={c} />
+          <InfoBlock
+            label="Wholesale threshold qty"
+            value={getPricingThreshold(product) != null ? String(getPricingThreshold(product)) : "—"}
+            c={c}
+          />
           <InfoBlock label="Cost price" value={money(product.cost_price)} c={c} />
           <InfoBlock label="Current stock" value={String(product.current_stock || 0)} c={c} />
           <InfoBlock label="Reorder level" value={String(product.reorder_level || 0)} c={c} />

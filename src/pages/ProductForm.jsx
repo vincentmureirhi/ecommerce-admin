@@ -13,6 +13,35 @@ function toSafeNumber(value, fallback = 0) {
   return Number.isFinite(num) ? num : fallback;
 }
 
+function toPriceLabel(value) {
+  return `KES ${Number(value || 0).toLocaleString(undefined, {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  })}`;
+}
+
+function resolveThresholdQty(primary, fallback) {
+  const primaryNum = Number(primary);
+  if (Number.isFinite(primaryNum) && primaryNum > 0) return primaryNum;
+  const fallbackNum = Number(fallback);
+  if (Number.isFinite(fallbackNum) && fallbackNum > 0) return fallbackNum;
+  return null;
+}
+
+function buildPricingSummary({ retailPrice, wholesalePrice, thresholdQty, pricingRuleId, pricingRuleType }) {
+  const retail = toPriceLabel(retailPrice);
+  const wholesale = Number(wholesalePrice);
+  const hasWholesale = Number.isFinite(wholesale) && wholesale > 0;
+  const hasRule = pricingRuleId != null;
+
+  if (!hasWholesale) return "Retail only";
+  if (pricingRuleType === "SKU_THRESHOLD" && thresholdQty) {
+    return `Retail: ${retail} | Wholesale: ${toPriceLabel(wholesale)} from ${thresholdQty} pcs`;
+  }
+  if (!hasRule) return "Wholesale configured, no active rule";
+  return `Retail: ${retail} | Wholesale: ${toPriceLabel(wholesale)}`;
+}
+
 function PageCard({ title, subtitle, children, c }) {
   return (
     <section
@@ -157,6 +186,12 @@ export default function ProductForm() {
   const [dragActive, setDragActive] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [pricingMeta, setPricingMeta] = useState({
+    pricing_rule_id: null,
+    pricing_rule_type: "",
+    pricing_rule_name: "",
+    wholesale_threshold_qty: null,
+  });
 
   const [form, setForm] = useState({
     name: "",
@@ -198,6 +233,24 @@ export default function ProductForm() {
       marginPercent: retail > 0 ? ((retail - cost) / retail) * 100 : 0,
     };
   }, [form.retail_price, form.cost_price]);
+
+  const pricingSummary = useMemo(() => {
+    const thresholdQty = resolveThresholdQty(form.min_qty_wholesale, pricingMeta.wholesale_threshold_qty);
+    return buildPricingSummary({
+      retailPrice: form.retail_price,
+      wholesalePrice: form.wholesale_price,
+      thresholdQty,
+      pricingRuleId: pricingMeta.pricing_rule_id,
+      pricingRuleType: pricingMeta.pricing_rule_type,
+    });
+  }, [
+    form.min_qty_wholesale,
+    form.retail_price,
+    form.wholesale_price,
+    pricingMeta.pricing_rule_id,
+    pricingMeta.pricing_rule_type,
+    pricingMeta.wholesale_threshold_qty,
+  ]);
 
   function updateField(key, value) {
     setForm((prev) => ({
@@ -273,6 +326,11 @@ export default function ProductForm() {
           null;
 
         if (product) {
+          const thresholdQty = resolveThresholdQty(
+            product.wholesale_threshold_qty,
+            product.min_qty_wholesale ?? product.min_wholesale_qty
+          );
+
           setForm({
             name: product.name || "",
             description: product.description || "",
@@ -294,11 +352,24 @@ export default function ProductForm() {
             is_active: product.is_active !== false,
             image_url: product.image_url || "",
           });
+          setPricingMeta({
+            pricing_rule_id: product.pricing_rule_id ?? null,
+            pricing_rule_type: product.pricing_rule_type || "",
+            pricing_rule_name: product.pricing_rule_name || "",
+            wholesale_threshold_qty: thresholdQty,
+          });
 
           if (product.image_url) {
             setUploadedImages([{ url: product.image_url, isMain: true }]);
           }
         }
+      } else {
+        setPricingMeta({
+          pricing_rule_id: null,
+          pricing_rule_type: "",
+          pricing_rule_name: "",
+          wholesale_threshold_qty: null,
+        });
       }
     } catch (e) {
       setErr(e?.message || "Failed to load product data.");
@@ -715,6 +786,37 @@ export default function ProductForm() {
                 />
               </Field>
             </FormGrid>
+
+            <div
+              style={{
+                marginTop: 14,
+                padding: 12,
+                borderRadius: 14,
+                border: `1px solid ${c.border}`,
+                background: isDark ? "#0f172a" : "#f8fafc",
+                display: "grid",
+                gap: 6,
+              }}
+            >
+              <div style={{ fontSize: 12, fontWeight: 800, color: c.muted }}>
+                Customer pricing preview
+              </div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: c.text }}>{pricingSummary}</div>
+              <div style={{ fontSize: 12, color: c.muted }}>
+                {pricingMeta.pricing_rule_id != null
+                  ? `Linked rule #${pricingMeta.pricing_rule_id} • ${pricingMeta.pricing_rule_type || "Unknown type"}`
+                  : "Legacy / no pricing rule"}
+              </div>
+              <div style={{ fontSize: 12, color: c.muted }}>
+                Rule name: {pricingMeta.pricing_rule_name || "—"}
+              </div>
+              {pricingMeta.pricing_rule_type === "SKU_THRESHOLD" ? (
+                <div style={{ fontSize: 12, color: c.muted }}>
+                  SKU_THRESHOLD behavior: wholesale price applies from{" "}
+                  {resolveThresholdQty(form.min_qty_wholesale, pricingMeta.wholesale_threshold_qty) || "—"} pcs.
+                </div>
+              ) : null}
+            </div>
           </PageCard>
 
           <PageCard
