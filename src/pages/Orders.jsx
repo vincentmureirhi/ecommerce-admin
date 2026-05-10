@@ -8,6 +8,8 @@ import {
   getOrderStatistics,
 } from "../api/orders";
 import { getCustomerById } from "../api/customers";
+import { getOrderStatusMeta } from "../utils/orderStatus";
+import { openOrderPrintWindow } from "../utils/orderPrint";
 
 function money(value) {
   return `KES ${parseFloat(value || 0).toLocaleString("en-US", {
@@ -16,28 +18,30 @@ function money(value) {
 }
 
 function getOrderStatusStyle(status, isDark) {
-  if (status === "completed") {
+  const normalized = String(status || "").toLowerCase();
+
+  if (normalized === "completed") {
     return {
       bg: isDark ? "rgba(16, 185, 129, 0.2)" : "#d4edda",
       color: isDark ? "#4ade80" : "#155724",
     };
   }
 
-  if (status === "pending") {
+  if (normalized === "pending") {
     return {
       bg: isDark ? "rgba(245, 158, 11, 0.2)" : "#fff3cd",
       color: isDark ? "#fbbf24" : "#856404",
     };
   }
 
-  if (status === "processing") {
+  if (normalized === "processing") {
     return {
       bg: isDark ? "rgba(59, 130, 246, 0.2)" : "#dbeafe",
       color: isDark ? "#93c5fd" : "#1d4ed8",
     };
   }
 
-  if (status === "dispatched") {
+  if (normalized === "dispatched") {
     return {
       bg: isDark ? "rgba(139, 92, 246, 0.2)" : "#ede9fe",
       color: isDark ? "#a78bfa" : "#5b21b6",
@@ -109,14 +113,14 @@ function getSettlementStyle(order, isDark) {
 function getPrintedStyle(order, isDark) {
   if (order.is_printed) {
     return {
-      label: "Printed",
+      label: "Acknowledged",
       bg: isDark ? "rgba(16, 185, 129, 0.2)" : "#d4edda",
       color: isDark ? "#4ade80" : "#155724",
     };
   }
 
   return {
-    label: "Not Printed",
+    label: "Needs Print",
     bg: isDark ? "rgba(148, 163, 184, 0.2)" : "#e2e8f0",
     color: isDark ? "#cbd5e1" : "#475569",
   };
@@ -203,19 +207,7 @@ export default function Orders() {
 
       const res = await getOrderForPrint(orderId);
       const html = res?.data?.html;
-
-      if (!html) {
-        throw new Error("Printable order sheet was not returned");
-      }
-
-      const printWindow = window.open("", "_blank", "width=900,height=700");
-      if (!printWindow) {
-        throw new Error("Popup blocked. Allow popups and try again.");
-      }
-
-      printWindow.document.open();
-      printWindow.document.write(html);
-      printWindow.document.close();
+      openOrderPrintWindow(html);
 
       await loadData();
     } catch (e) {
@@ -266,7 +258,7 @@ export default function Orders() {
           📦 Orders
         </h1>
         <p style={{ margin: 0, color: c.textMuted, fontSize: 13 }}>
-          All orders from normal and region customers, with printing, payment tracking, and balance control
+          All orders from normal and region customers, with clear status progression, print acknowledgment, and settlement tracking
         </p>
       </div>
 
@@ -335,7 +327,7 @@ export default function Orders() {
           }}
         >
           <SummaryCard title="Total Orders" value={stats.total_orders || 0} subtitle="All recorded orders" c={c} />
-          <SummaryCard title="Printed" value={stats.printed_orders || 0} subtitle="Already handled" c={c} />
+          <SummaryCard title="Printed / Acknowledged" value={stats.printed_orders || 0} subtitle="Already handled" c={c} />
           <SummaryCard title="Pending Print" value={stats.not_printed_orders || 0} subtitle="Still waiting" c={c} />
           <SummaryCard title="Open Region Credit" value={stats.route_credit_open || 0} subtitle="Credit orders not cleared" c={c} />
           <SummaryCard title="Outstanding Balance" value={money(stats.total_outstanding_balance || 0)} subtitle="Money still owed" c={c} />
@@ -375,10 +367,10 @@ export default function Orders() {
           <label style={filterLabel(c)}>Order Status</label>
           <select value={orderStatus} onChange={(e) => setOrderStatus(e.target.value)} style={inputStyle(c)}>
             <option value="">All Statuses</option>
-            <option value="pending">⏳ Pending</option>
-            <option value="processing">⚙️ Processing</option>
-            <option value="dispatched">🚚 Dispatched</option>
-            <option value="completed">✅ Completed</option>
+            <option value="pending">⏳ Pending (new)</option>
+            <option value="processing">⚙️ Processing (picked)</option>
+            <option value="dispatched">🚚 Dispatched (in transit)</option>
+            <option value="completed">✅ Completed (delivered)</option>
             <option value="cancelled">❌ Cancelled</option>
           </select>
         </div>
@@ -445,15 +437,17 @@ export default function Orders() {
                 <th style={{ ...thStyle(c), textAlign: "right" }}>Amount Paid</th>
                 <th style={{ ...thStyle(c), textAlign: "right" }}>Balance</th>
                 <th style={{ ...thStyle(c), textAlign: "center" }}>Due Date</th>
-                <th style={{ ...thStyle(c), textAlign: "center" }}>Order</th>
+                <th style={{ ...thStyle(c), textAlign: "center" }}>Order State</th>
                 <th style={{ ...thStyle(c), textAlign: "center" }}>Settlement</th>
-                <th style={{ ...thStyle(c), textAlign: "center" }}>Printed</th>
+                <th style={{ ...thStyle(c), textAlign: "center" }}>Print State</th>
                 <th style={{ ...thStyle(c), textAlign: "center" }}>Actions</th>
               </tr>
             </thead>
             <tbody>
               {rows.map((order, idx) => {
                 const orderStatusStyle = getOrderStatusStyle(order.order_status, isDark);
+                const orderStatusMeta = getOrderStatusMeta(order.order_status);
+                const nextStatusMeta = getOrderStatusMeta(orderStatusMeta.nextStatus);
                 const settlementStyle = getSettlementStyle(order, isDark);
                 const printedStyle = getPrintedStyle(order, isDark);
 
@@ -535,9 +529,14 @@ export default function Orders() {
                           fontSize: 11,
                           fontWeight: 600,
                         }}
-                      >
-                        {order.order_status}
+                        >
+                        {orderStatusMeta.icon} {orderStatusMeta.label}
                       </span>
+                      <div style={{ marginTop: 4, fontSize: 11, color: c.textMuted }}>
+                        {orderStatusMeta.nextStatus
+                          ? `Next: ${nextStatusMeta.label}`
+                          : "Flow complete"}
+                      </div>
                     </td>
 
                     <td style={{ ...tdBase, textAlign: "center" }}>
@@ -580,12 +579,16 @@ export default function Orders() {
                         </span>
                         {order.printed_at ? (
                           <span style={{ fontSize: 11, color: c.textMuted }}>
-                            {new Date(order.printed_at).toLocaleDateString("en-US", {
+                            {`Printed ${new Date(order.printed_at).toLocaleDateString("en-US", {
                               month: "short",
                               day: "numeric",
-                            })}
+                            })}`}
                           </span>
-                        ) : null}
+                        ) : (
+                          <span style={{ fontSize: 11, color: c.textMuted }}>
+                            Pending acknowledgement
+                          </span>
+                        )}
                       </div>
                     </td>
 
@@ -604,7 +607,11 @@ export default function Orders() {
                             opacity: printingId === order.id ? 0.7 : 1,
                           }}
                         >
-                          {printingId === order.id ? "Printing..." : order.is_printed ? "Reprint" : "Print"}
+                          {printingId === order.id
+                            ? "Printing..."
+                            : order.is_printed
+                            ? "Reprint"
+                            : "Print Order"}
                         </button>
                       </div>
                     </td>

@@ -3,6 +3,8 @@ import { getOrderById, updateOrderStatus, getOrderForPrint } from "../api/orders
 import { useParams, useNavigate } from "react-router-dom";
 import { useTheme } from "../context/ThemeContext";
 import { getThemeColors } from "../utils/themeColors";
+import { getOrderStatusMeta, ORDER_STATUS_FLOW } from "../utils/orderStatus";
+import { openOrderPrintWindow } from "../utils/orderPrint";
 
 function money(value) {
   return `KES ${parseFloat(value || 0).toLocaleString("en-US", {
@@ -52,18 +54,28 @@ export default function OrderDetails() {
     load();
   }, [id]);
 
-  async function onSaveOrderStatus() {
+  async function persistOrderStatus(nextStatus) {
     try {
       setSavingOrderStatus(true);
-      const res = await updateOrderStatus(id, { order_status: orderStatus });
+      const res = await updateOrderStatus(id, { order_status: nextStatus });
       const updated = res?.data || res;
+      const statusFromResponse =
+        typeof updated?.order_status === "string" && updated.order_status.trim()
+          ? updated.order_status
+          : null;
+
       setOrder(updated);
+      setOrderStatus(statusFromResponse || nextStatus || "pending");
       setErr("");
     } catch (e) {
       setErr(e?.message || "Failed to update order status");
     } finally {
       setSavingOrderStatus(false);
     }
+  }
+
+  async function onSaveOrderStatus() {
+    await persistOrderStatus(orderStatus);
   }
 
   async function onSaveSettlement() {
@@ -106,19 +118,7 @@ export default function OrderDetails() {
       setPrinting(true);
       const data = await getOrderForPrint(id);
       const html = data?.data?.html;
-
-      if (!html) {
-        throw new Error("Failed to generate printable order sheet");
-      }
-
-      const printWindow = window.open("", "", "width=900,height=700");
-      if (!printWindow) {
-        throw new Error("Popup blocked. Allow popups and try again.");
-      }
-
-      printWindow.document.open();
-      printWindow.document.write(html);
-      printWindow.document.close();
+      openOrderPrintWindow(html);
 
       await load();
     } catch (e) {
@@ -169,6 +169,10 @@ export default function OrderDetails() {
     order.order_type === "route"
       ? order.payment_state || "unpaid"
       : order.payment_status || "pending";
+  const currentStatusMeta = getOrderStatusMeta(order.order_status);
+  const selectedStatusMeta = getOrderStatusMeta(orderStatus);
+  const nextStatusMeta = getOrderStatusMeta(currentStatusMeta.nextStatus);
+  const hasOrderStatusChanges = selectedStatusMeta.value !== currentStatusMeta.value;
 
   return (
     <div style={{ background: c.bg, minHeight: "100vh", padding: 20 }}>
@@ -187,7 +191,7 @@ export default function OrderDetails() {
             🛒 {order.order_number}
           </h1>
           <p style={{ margin: 0, color: c.textMuted, fontSize: 13 }}>
-            Order details, printing, and real settlement tracking
+            Order details, clear fulfillment status flow, printing acknowledgment, and settlement tracking
           </p>
         </div>
 
@@ -287,9 +291,9 @@ export default function OrderDetails() {
           </div>
 
           <div style={{ marginBottom: 12 }}>
-            <div style={label}>Printed</div>
+            <div style={label}>Printed / Acknowledged</div>
             <div style={value}>
-              {order.is_printed ? "✅ Printed" : "🕓 Not Printed"}
+              {order.is_printed ? "✅ Acknowledged after print" : "🕓 Not acknowledged yet"}
               {order.printed_at ? ` · ${new Date(order.printed_at).toLocaleString()}` : ""}
             </div>
           </div>
@@ -313,24 +317,78 @@ export default function OrderDetails() {
               📦 Order Status
             </h3>
 
+            <div
+              style={{
+                marginBottom: 12,
+                padding: 10,
+                borderRadius: 8,
+                background: isDark ? "rgba(102, 126, 234, 0.12)" : "#eef2ff",
+                border: `1px solid ${isDark ? "rgba(102, 126, 234, 0.25)" : "#c7d2fe"}`,
+              }}
+            >
+              <div style={{ ...label, marginBottom: 8 }}>Current State</div>
+              <div style={{ ...value, marginBottom: 6 }}>
+                {currentStatusMeta.icon} {currentStatusMeta.label}
+              </div>
+              <div style={{ fontSize: 12, color: c.textMuted }}>
+                Customer tracking label: <strong>{currentStatusMeta.trackingLabel}</strong>
+              </div>
+              <div style={{ fontSize: 12, color: c.textMuted, marginTop: 4 }}>
+                {currentStatusMeta.nextStatus
+                  ? `Next expected action: ${currentStatusMeta.nextAction}`
+                  : "Lifecycle complete for this order."}
+              </div>
+            </div>
+
+            <div style={{ marginBottom: 12, display: "flex", flexWrap: "wrap", gap: 6 }}>
+              {ORDER_STATUS_FLOW.map((step) => {
+                const isCurrent = step.value === String(order.order_status || "").toLowerCase();
+                return (
+                  <span
+                    key={step.value}
+                    style={{
+                      display: "inline-block",
+                      padding: "4px 8px",
+                      borderRadius: 999,
+                      fontSize: 11,
+                      fontWeight: 700,
+                      background: isCurrent
+                        ? isDark
+                          ? "rgba(16, 185, 129, 0.2)"
+                          : "#d1fae5"
+                        : isDark
+                        ? "rgba(148, 163, 184, 0.18)"
+                        : "#f1f5f9",
+                      color: isCurrent ? (isDark ? "#4ade80" : "#047857") : c.textMuted,
+                    }}
+                  >
+                    {step.icon} {step.label}
+                  </span>
+                );
+              })}
+            </div>
+
             <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: c.textMuted, marginBottom: 6 }}>
-              Order Status
+              Change Order Status
             </label>
             <select
               value={orderStatus}
               onChange={(e) => setOrderStatus(e.target.value)}
               style={inputStyle(c)}
             >
-              <option value="pending">⏳ Pending</option>
-              <option value="processing">⚙️ Processing</option>
-              <option value="dispatched">🚚 Dispatched</option>
-              <option value="completed">✔️ Completed</option>
-              <option value="cancelled">❌ Cancelled</option>
+              {ORDER_STATUS_FLOW.map((step) => (
+                <option key={step.value} value={step.value}>
+                  {step.icon} {step.label}
+                </option>
+              ))}
             </select>
+            <div style={{ marginTop: 8, fontSize: 12, color: c.textMuted }}>
+              Selected tracking label: {selectedStatusMeta.trackingLabel}
+            </div>
 
             <button
               onClick={onSaveOrderStatus}
-              disabled={savingOrderStatus}
+              disabled={savingOrderStatus || !hasOrderStatusChanges}
               style={{
                 width: "100%",
                 padding: "10px 12px",
@@ -342,11 +400,33 @@ export default function OrderDetails() {
                 fontSize: 12,
                 fontWeight: 700,
                 marginTop: 10,
-                opacity: savingOrderStatus ? 0.7 : 1,
+                opacity: savingOrderStatus || !hasOrderStatusChanges ? 0.7 : 1,
               }}
             >
-              {savingOrderStatus ? "Saving..." : "Update Order Status"}
+              {savingOrderStatus ? "Saving..." : hasOrderStatusChanges ? "Save Status Update" : "Status Up To Date"}
             </button>
+
+            {currentStatusMeta.nextStatus ? (
+              <button
+                onClick={() => persistOrderStatus(currentStatusMeta.nextStatus)}
+                disabled={savingOrderStatus}
+                style={{
+                  width: "100%",
+                  padding: "10px 12px",
+                  background: "#16a34a",
+                  color: "white",
+                  border: "none",
+                  borderRadius: 6,
+                  cursor: savingOrderStatus ? "not-allowed" : "pointer",
+                  fontSize: 12,
+                  fontWeight: 700,
+                  marginTop: 8,
+                  opacity: savingOrderStatus ? 0.7 : 1,
+                }}
+              >
+                {savingOrderStatus ? "Updating..." : `Move to ${nextStatusMeta.label}`}
+              </button>
+            ) : null}
           </div>
 
           <div style={card}>
