@@ -7,6 +7,8 @@ import Dashboard from "./pages/Dashboard.jsx";
 import Products from "./pages/Products.jsx";
 import Categories from "./pages/Categories.jsx";
 import PriceTiers from "./pages/PriceTiers.jsx";
+import PricingRules from "./pages/PricingRules.jsx";
+import PricingGroups from "./pages/PricingGroups.jsx";
 import ProductForm from "./pages/ProductForm.jsx";
 import Customers from "./pages/Customers.jsx";
 import CustomerDetail from "./pages/CustomerDetail.jsx";
@@ -330,6 +332,28 @@ export default function App() {
           <AdminProtected>
             <Shell>
               <PriceTiers />
+            </Shell>
+          </AdminProtected>
+        }
+      />
+
+      <Route
+        path="/pricing-rules"
+        element={
+          <AdminProtected>
+            <Shell>
+              <PricingRules />
+            </Shell>
+          </AdminProtected>
+        }
+      />
+
+      <Route
+        path="/pricing-groups"
+        element={
+          <AdminProtected>
+            <Shell>
+              <PricingGroups />
             </Shell>
           </AdminProtected>
         }
