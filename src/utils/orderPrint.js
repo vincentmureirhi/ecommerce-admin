@@ -25,7 +25,7 @@ export function openOrderPrintWindow(html) {
     throw new Error("Printable order sheet was not returned");
   }
 
-  const printWindow = window.open("", "_blank", "width=520,height=760");
+  const printWindow = window.open("", "_blank", "width=900,height=700");
   if (!printWindow) {
     throw new Error("Popup blocked. Allow popups and try again.");
   }

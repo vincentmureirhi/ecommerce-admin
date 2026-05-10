@@ -54,7 +54,7 @@ export function getOrderStatusMeta(status) {
     ORDER_STATUS_LOOKUP[normalized] || {
       value: normalized || "pending",
       icon: "📦",
-      label: normalized ? normalized.replaceAll("_", " ") : "Pending",
+      label: normalized ? normalized.replace(/_/g, " ") : "Pending",
       trackingLabel: "Order update",
       nextStatus: null,
       nextAction: "Review order details",

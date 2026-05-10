@@ -59,8 +59,13 @@ export default function OrderDetails() {
       setSavingOrderStatus(true);
       const res = await updateOrderStatus(id, { order_status: nextStatus });
       const updated = res?.data || res;
+      const statusFromResponse =
+        typeof updated?.order_status === "string" && updated.order_status.trim()
+          ? updated.order_status
+          : null;
+
       setOrder(updated);
-      setOrderStatus(updated?.order_status || nextStatus || "pending");
+      setOrderStatus(statusFromResponse || nextStatus || "pending");
       setErr("");
     } catch (e) {
       setErr(e?.message || "Failed to update order status");
@@ -167,7 +172,7 @@ export default function OrderDetails() {
   const currentStatusMeta = getOrderStatusMeta(order.order_status);
   const selectedStatusMeta = getOrderStatusMeta(orderStatus);
   const nextStatusMeta = getOrderStatusMeta(currentStatusMeta.nextStatus);
-  const hasOrderStatusChanges = String(orderStatus || "") !== String(order.order_status || "");
+  const hasOrderStatusChanges = selectedStatusMeta.value !== currentStatusMeta.value;
 
   return (
     <div style={{ background: c.bg, minHeight: "100vh", padding: 20 }}>
