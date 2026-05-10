@@ -39,3 +39,8 @@ export async function listLatestSalesRepLocations() {
   const res = await client.get("/sales-reps/locations/latest");
   return res.data;
 }
+
+export async function resetSalesRepPassword(id, data = {}) {
+  const res = await client.post(`/sales-reps/${id}/reset-password`, data);
+  return res.data;
+}
