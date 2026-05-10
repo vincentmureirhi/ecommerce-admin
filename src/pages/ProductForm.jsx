@@ -167,7 +167,7 @@ export default function ProductForm() {
     department_id: "",
     retail_price: "",
     wholesale_price: "",
-    min_wholesale_qty: "10",
+    min_qty_wholesale: "10",
     cost_price: "",
     reorder_level: "10",
     current_stock: "0",
@@ -283,7 +283,9 @@ export default function ProductForm() {
             retail_price: product.retail_price != null ? String(product.retail_price) : "",
             wholesale_price:
               product.wholesale_price != null ? String(product.wholesale_price) : "",
-            min_wholesale_qty: String(product.min_wholesale_qty || 10),
+            min_qty_wholesale: String(
+              product.min_qty_wholesale ?? product.wholesale_threshold_qty ?? product.min_wholesale_qty ?? 10
+            ),
             cost_price: product.cost_price != null ? String(product.cost_price) : "",
             reorder_level: String(product.reorder_level || 10),
             current_stock: String(product.current_stock || 0),
@@ -439,7 +441,7 @@ export default function ProductForm() {
         department_id: form.department_id ? parseInt(form.department_id, 10) : null,
         retail_price: Number(form.retail_price),
         wholesale_price: form.wholesale_price ? Number(form.wholesale_price) : null,
-        min_wholesale_qty: Number(form.min_wholesale_qty) || 10,
+        min_qty_wholesale: Number(form.min_qty_wholesale) || 10,
         cost_price: form.cost_price ? Number(form.cost_price) : null,
         reorder_level: Math.max(0, Number(form.reorder_level) || 10),
         current_stock: Math.max(0, Number(form.current_stock) || 0),
@@ -706,8 +708,8 @@ export default function ProductForm() {
                 <input
                   type="number"
                   min="1"
-                  value={form.min_wholesale_qty}
-                  onChange={(e) => updateField("min_wholesale_qty", e.target.value)}
+                  value={form.min_qty_wholesale}
+                  onChange={(e) => updateField("min_qty_wholesale", e.target.value)}
                   placeholder="10"
                   style={inputStyle(c, isDark)}
                 />
