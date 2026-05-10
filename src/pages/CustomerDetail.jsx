@@ -17,6 +17,13 @@ function money(value) {
   })}`;
 }
 
+function displayCustomerType(type) {
+  const value = String(type || "").toLowerCase();
+  if (value === "route") return "Route Customer";
+  if (value === "normal") return "Normal Customer";
+  return type || "—";
+}
+
 function badgeStyle(label, isDark) {
   const value = String(label || "").toLowerCase();
 
@@ -165,6 +172,22 @@ export default function CustomerDetail() {
         </div>
 
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+          {customer.sales_rep_id ? (
+            <>
+              <button
+                onClick={() => nav(`/sales-reps/${customer.sales_rep_id}`)}
+                style={btn("#0ea5e9")}
+              >
+                View Sales Rep
+              </button>
+              <button
+                onClick={() => nav(`/sales-reps/${customer.sales_rep_id}/track`)}
+                style={btn("#16a34a")}
+              >
+                Track Sales Rep
+              </button>
+            </>
+          ) : null}
           <button
             onClick={() => nav(`/orders?customer=${customer.id}`)}
             style={btn("#667eea")}
@@ -213,11 +236,23 @@ export default function CustomerDetail() {
         >
           <InfoBlock label="Phone" value={customer.phone || "—"} c={c} />
           <InfoBlock label="Email" value={customer.email || "—"} c={c} />
-          <InfoBlock label="Customer Type" value={customer.customer_type || "—"} c={c} />
+          <InfoBlock label="Customer Type" value={displayCustomerType(customer.customer_type)} c={c} />
           <InfoBlock label="Status" value={customer.is_active ? "active" : "inactive"} c={c} />
           <InfoBlock label="Location" value={customer.location_name || "—"} c={c} />
           <InfoBlock label="Region" value={customer.region_name || "—"} c={c} />
-          <InfoBlock label="Sales Rep" value={customer.sales_rep_name || "—"} c={c} />
+          <InfoBlock
+            label="Sales Rep"
+            value={
+              customer.sales_rep_name
+                ? `${customer.sales_rep_name}${
+                    customer.sales_rep_id ? ` · Rep ID: ${customer.sales_rep_id}` : ""
+                  }`
+                : customer.sales_rep_id
+                ? `Rep ID: ${customer.sales_rep_id}`
+                : "—"
+            }
+            c={c}
+          />
           <InfoBlock
             label="Created"
             value={customer.created_at ? new Date(customer.created_at).toLocaleDateString() : "—"}

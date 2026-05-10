@@ -899,7 +899,13 @@ export default function Customers() {
                           {customer.location_name || "No location"}
                         </div>
                         <div style={{ color: colors.textMuted, fontSize: 12 }}>
-                          {customer.sales_rep_name || customer.sales_rep_id ? `Rep ID: ${customer.sales_rep_id}` : "No rep assigned"}
+                          {customer.sales_rep_name
+                            ? `${customer.sales_rep_name}${
+                                customer.sales_rep_id ? ` · Rep ID: ${customer.sales_rep_id}` : ""
+                              }`
+                            : customer.sales_rep_id
+                            ? `Rep ID: ${customer.sales_rep_id}`
+                            : "No rep assigned"}
                         </div>
                       </td>
 
@@ -1043,4 +1049,3 @@ export default function Customers() {
     </div>
   );
 }
-

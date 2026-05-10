@@ -470,10 +470,37 @@ export default function Orders() {
                         textDecoration: order.customer_id ? "underline" : "none",
                       }}
                     >
-                      {order.customer_name}
+                      <div>{order.customer_name}</div>
+                      <div style={{ fontSize: 11, color: c.textMuted, marginTop: 3 }}>
+                        {String(order.customer_type || order.order_type || "")
+                          .toLowerCase()
+                          .includes("route")
+                          ? "Route customer workflow"
+                          : "Standard customer workflow"}
+                      </div>
                     </td>
 
-                    <td style={tdMuted(c)}>{order.sales_rep_name || "Unassigned"}</td>
+                    <td style={tdMuted(c)}>
+                      <div>{order.sales_rep_name || "Unassigned"}</div>
+                      {order.sales_rep_id ? (
+                        <button
+                          onClick={() => nav(`/sales-reps/${order.sales_rep_id}/track`)}
+                          style={{
+                            marginTop: 4,
+                            padding: "4px 8px",
+                            background: "#16a34a",
+                            color: "white",
+                            border: "none",
+                            borderRadius: 999,
+                            cursor: "pointer",
+                            fontSize: 10,
+                            fontWeight: 700,
+                          }}
+                        >
+                          Track Rep
+                        </button>
+                      ) : null}
+                    </td>
                     <td style={tdMuted(c)}>{order.location_name || "—"}</td>
                     <td style={tdMuted(c)}>{order.region_name || "—"}</td>
 
