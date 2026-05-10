@@ -48,16 +48,20 @@ const ORDER_STATUS_LOOKUP = ORDER_STATUS_DEFINITIONS.reduce((acc, item) => {
 
 export const ORDER_STATUS_FLOW = ORDER_STATUS_DEFINITIONS;
 
+function formatStatusLabel(status) {
+  return String(status || "")
+    .trim()
+    .toLowerCase()
+    .replace(/_/g, " ")
+    .split(" ")
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
+}
+
 export function getOrderStatusMeta(status) {
   const normalized = String(status || "").trim().toLowerCase();
-  const fallbackLabel = normalized
-    ? normalized
-        .replace(/_/g, " ")
-        .split(" ")
-        .filter(Boolean)
-        .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-        .join(" ")
-    : "Pending";
+  const fallbackLabel = formatStatusLabel(normalized) || "Pending";
 
   return (
     ORDER_STATUS_LOOKUP[normalized] || {
