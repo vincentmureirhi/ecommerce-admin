@@ -49,7 +49,7 @@ const ORDER_STATUS_LOOKUP = ORDER_STATUS_DEFINITIONS.reduce((acc, item) => {
 export const ORDER_STATUS_FLOW = ORDER_STATUS_DEFINITIONS;
 
 function formatStatusLabel(status) {
-  return String(status || "")
+  const formatted = String(status || "")
     .trim()
     .toLowerCase()
     .replace(/_/g, " ")
@@ -57,11 +57,13 @@ function formatStatusLabel(status) {
     .filter(Boolean)
     .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
     .join(" ");
+
+  return formatted || "Pending";
 }
 
 export function getOrderStatusMeta(status) {
   const normalized = String(status || "").trim().toLowerCase();
-  const fallbackLabel = formatStatusLabel(normalized) || "Pending";
+  const fallbackLabel = formatStatusLabel(normalized);
 
   return (
     ORDER_STATUS_LOOKUP[normalized] || {

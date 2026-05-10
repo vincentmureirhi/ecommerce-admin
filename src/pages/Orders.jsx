@@ -611,7 +611,7 @@ export default function Orders() {
                             ? "Printing..."
                             : order.is_printed
                             ? "Reprint"
-                            : "Print & Acknowledge"}
+                            : "Print Order"}
                         </button>
                       </div>
                     </td>

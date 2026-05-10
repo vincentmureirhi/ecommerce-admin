@@ -211,7 +211,7 @@ export default function OrderDetails() {
               opacity: printing ? 0.7 : 1,
             }}
           >
-            {printing ? "Printing..." : order.is_printed ? "🖨️ Reprint" : "🖨️ Print & Acknowledge"}
+            {printing ? "Printing..." : order.is_printed ? "🖨️ Reprint" : "🖨️ Print Order"}
           </button>
 
           <button
