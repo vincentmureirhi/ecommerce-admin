@@ -3,6 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { createProduct, getProductById, updateProduct } from "../api/products";
 import { listCategories } from "../api/categories";
 import { listSuppliers } from "../api/suppliers";
+import { listPricingRules, listPricingGroups } from "../api/pricing";
 import { useTheme } from "../context/ThemeContext";
 
 const CLOUDINARY_CLOUD_NAME = "dwvmsjgvd";
@@ -113,6 +114,28 @@ function inputStyle(c, isDark) {
   };
 }
 
+function buildProductPricingSummary(meta) {
+  if (!meta || !meta.rule_type) return "Legacy / no explicit pricing rule — uses tier then wholesale then retail.";
+  const type = meta.rule_type;
+  const threshold = meta.threshold_qty;
+  const group = meta.group_name;
+
+  if (type === "FIXED_UNIT") return "Fixed unit price";
+  if (type === "SKU_THRESHOLD") {
+    return threshold
+      ? `Buy ${threshold}+ of the same product to get wholesale price`
+      : "Buy the minimum quantity of this product to get wholesale price";
+  }
+  if (type === "GROUP_THRESHOLD") {
+    return threshold && group
+      ? `Mix any ${threshold} items in "${group}" to qualify for wholesale`
+      : "Mix products in this pricing group to qualify for wholesale";
+  }
+  if (type === "SKU_TIERED") return "Tiered by same-product quantity";
+  if (type === "GROUP_TIERED") return "Tiered by combined group quantity";
+  return type;
+}
+
 export default function ProductForm() {
   const { id } = useParams();
   const nav = useNavigate();
@@ -151,12 +174,17 @@ export default function ProductForm() {
 
   const [suppliers, setSuppliers] = useState([]);
   const [categories, setCategories] = useState([]);
+  const [pricingRules, setPricingRules] = useState([]);
+  const [pricingGroups, setPricingGroups] = useState([]);
   const [err, setErr] = useState("");
   const [loading, setLoading] = useState(true);
   const [uploadedImages, setUploadedImages] = useState([]);
   const [dragActive, setDragActive] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+
+  // Pricing assignment for existing products (read from API response metadata)
+  const [pricingMeta, setPricingMeta] = useState(null);
 
   const [form, setForm] = useState({
     name: "",
@@ -175,6 +203,7 @@ export default function ProductForm() {
     requires_manual_price: false,
     is_active: true,
     image_url: "",
+    pricing_rule_id: "",
   });
 
   const pageTitle = id ? "Edit Product" : "Create Product";
@@ -247,9 +276,11 @@ export default function ProductForm() {
       setLoading(true);
       setErr("");
 
-      const [supplierResponse, categoryResponse] = await Promise.all([
+      const [supplierResponse, categoryResponse, rulesResponse, groupsResponse] = await Promise.all([
         listSuppliers(),
         listCategories(),
+        listPricingRules().catch(() => ({ data: [] })),
+        listPricingGroups().catch(() => ({ data: [] })),
       ]);
 
       const supplierRows =
@@ -262,8 +293,13 @@ export default function ProductForm() {
         categoryResponse?.data ||
         [];
 
+      const ruleRows = rulesResponse?.data || rulesResponse;
+      const groupRows = groupsResponse?.data || groupsResponse;
+
       setSuppliers(Array.isArray(supplierRows) ? supplierRows : []);
       setCategories(Array.isArray(categoryRows) ? categoryRows : []);
+      setPricingRules(Array.isArray(ruleRows) ? ruleRows : []);
+      setPricingGroups(Array.isArray(groupRows) ? groupRows : []);
 
       if (id) {
         const productResponse = await getProductById(id);
@@ -293,6 +329,16 @@ export default function ProductForm() {
             requires_manual_price: product.requires_manual_price === true,
             is_active: product.is_active !== false,
             image_url: product.image_url || "",
+            pricing_rule_id: product.pricing_rule_id != null ? String(product.pricing_rule_id) : "",
+          });
+
+          // Store pricing metadata returned by API for display
+          setPricingMeta({
+            rule_type: product.pricing_rule_type || null,
+            rule_name: product.pricing_rule_name || null,
+            group_id: product.pricing_group_id || null,
+            group_name: product.pricing_group_name || null,
+            threshold_qty: product.wholesale_threshold_qty || null,
           });
 
           if (product.image_url) {
@@ -449,6 +495,7 @@ export default function ProductForm() {
         requires_manual_price: form.requires_manual_price === true,
         is_active: form.is_active === true,
         image_url: form.image_url || null,
+        pricing_rule_id: form.pricing_rule_id ? parseInt(form.pricing_rule_id, 10) : null,
       };
 
       if (id) {
@@ -715,6 +762,75 @@ export default function ProductForm() {
                 />
               </Field>
             </FormGrid>
+          </PageCard>
+
+          <PageCard
+            title="Pricing rule assignment"
+            subtitle="Link this product to a pricing rule to control how its price is calculated at checkout."
+            c={c}
+          >
+            <FormGrid>
+              <Field
+                label="Pricing rule"
+                hint="Select the rule that governs this product's pricing. Leave blank to use legacy tier/wholesale fallback."
+                c={c}
+              >
+                <select
+                  value={form.pricing_rule_id}
+                  onChange={(e) => updateField("pricing_rule_id", e.target.value)}
+                  style={inputStyle(c, isDark)}
+                >
+                  <option value="">— No explicit rule (legacy fallback) —</option>
+                  {pricingRules.map((r) => (
+                    <option key={r.id} value={r.id}>
+                      {r.name} ({r.rule_type})
+                    </option>
+                  ))}
+                </select>
+              </Field>
+            </FormGrid>
+
+            {/* Pricing summary panel (read from API metadata for existing products) */}
+            {id && pricingMeta && (
+              <div style={{
+                marginTop: 16,
+                padding: "12px 16px",
+                background: isDark ? "rgba(102,126,234,0.07)" : "#f0f4ff",
+                borderRadius: 10,
+                border: `1px solid ${isDark ? "rgba(102,126,234,0.22)" : "#c7d2fe"}`,
+              }}>
+                <div style={{ fontSize: 11, fontWeight: 800, color: isDark ? "#93c5fd" : "#4338ca", textTransform: "uppercase", marginBottom: 8 }}>
+                  Current pricing summary
+                </div>
+                <div style={{ display: "grid", gap: 4 }}>
+                  <div style={{ fontSize: 13, color: c.text }}>
+                    <strong>Rule:</strong>{" "}
+                    {pricingMeta.rule_name
+                      ? `${pricingMeta.rule_name} (${pricingMeta.rule_type})`
+                      : <span style={{ color: c.muted, fontStyle: "italic" }}>Legacy / no explicit pricing rule</span>}
+                  </div>
+                  {pricingMeta.group_name && (
+                    <div style={{ fontSize: 13, color: c.text }}>
+                      <strong>Group:</strong> {pricingMeta.group_name}
+                    </div>
+                  )}
+                  {pricingMeta.threshold_qty && (
+                    <div style={{ fontSize: 13, color: c.text }}>
+                      <strong>Threshold qty:</strong> {pricingMeta.threshold_qty}
+                    </div>
+                  )}
+                  <div style={{ marginTop: 6, fontSize: 12, color: isDark ? "#93c5fd" : "#4338ca", fontStyle: "italic" }}>
+                    {buildProductPricingSummary(pricingMeta)}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {!id && (
+              <div style={{ marginTop: 12, fontSize: 12, color: c.muted }}>
+                💡 You can assign a pricing rule after creating the product, or create the product first and assign it later from the Pricing Rules page.
+              </div>
+            )}
           </PageCard>
 
           <PageCard
