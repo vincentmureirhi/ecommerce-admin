@@ -9,6 +9,7 @@ import {
   getCustomerSummary,
 } from "../api/customers";
 import { getOrderForPrint } from "../api/orders";
+import { openOrderPrintWindow } from "../utils/orderPrint";
 
 function money(value) {
   return `KES ${parseFloat(value || 0).toLocaleString("en-US", {
@@ -112,19 +113,7 @@ export default function CustomerDetail() {
       setPrintingId(orderId);
       const res = await getOrderForPrint(orderId);
       const html = res?.data?.html;
-
-      if (!html) {
-        throw new Error("Printable order sheet was not returned");
-      }
-
-      const printWindow = window.open("", "_blank", "width=900,height=700");
-      if (!printWindow) {
-        throw new Error("Popup blocked. Allow popups and try again.");
-      }
-
-      printWindow.document.open();
-      printWindow.document.write(html);
-      printWindow.document.close();
+      openOrderPrintWindow(html);
 
       await loadData();
     } catch (e) {
@@ -522,4 +511,3 @@ function smallBtn(background) {
     fontWeight: 700,
   };
 }
-
