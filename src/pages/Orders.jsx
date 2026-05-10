@@ -8,6 +8,7 @@ import {
   getOrderStatistics,
 } from "../api/orders";
 import { getCustomerById } from "../api/customers";
+import { listSalesReps } from "../api/salesReps";
 import { getOrderStatusMeta } from "../utils/orderStatus";
 import { openOrderPrintWindow } from "../utils/orderPrint";
 
@@ -157,19 +158,23 @@ export default function Orders() {
   const [searchParams, setSearchParams] = useSearchParams();
 
   const customerFromUrl = searchParams.get("customer") || "";
+  const salesRepFromUrl = searchParams.get("sales_rep") || "";
 
   const [rows, setRows] = useState([]);
   const [stats, setStats] = useState(null);
+  const [salesReps, setSalesReps] = useState([]);
   const [err, setErr] = useState("");
   const [loading, setLoading] = useState(true);
   const [printingId, setPrintingId] = useState(null);
   const [selectedCustomer, setSelectedCustomer] = useState(null);
+  const [selectedSalesRep, setSelectedSalesRep] = useState(null);
 
   const [search, setSearch] = useState("");
   const [orderType, setOrderType] = useState("");
   const [orderStatus, setOrderStatus] = useState("");
   const [printedStatus, setPrintedStatus] = useState("");
   const [paymentState, setPaymentState] = useState("");
+  const [salesRepFilter, setSalesRepFilter] = useState(salesRepFromUrl);
 
   async function loadData() {
     setErr("");
@@ -183,16 +188,19 @@ export default function Orders() {
       if (customerFromUrl) filters.customer_id = customerFromUrl;
       if (printedStatus) filters.printed_status = printedStatus;
       if (paymentState) filters.payment_state = paymentState;
+      if (salesRepFilter) filters.sales_rep_id = salesRepFilter;
 
-      const [orderData, customerData, statsData] = await Promise.all([
+      const [orderData, customerData, statsData, repsData] = await Promise.all([
         listOrders(filters),
         customerFromUrl ? getCustomerById(customerFromUrl) : Promise.resolve(null),
         getOrderStatistics(),
+        listSalesReps(),
       ]);
 
       setRows(Array.isArray(orderData.data) ? orderData.data : []);
       setSelectedCustomer(customerData?.data || null);
       setStats(statsData?.data || null);
+      setSalesReps(Array.isArray(repsData.data || repsData) ? repsData.data || repsData : []);
     } catch (e) {
       setErr(e?.message || "Failed to load orders");
       setSelectedCustomer(null);
@@ -225,7 +233,15 @@ export default function Orders() {
 
   useEffect(() => {
     loadData();
-  }, [search, orderType, orderStatus, customerFromUrl, printedStatus, paymentState]);
+  }, [search, orderType, orderStatus, customerFromUrl, printedStatus, paymentState, salesRepFilter]);
+
+  useEffect(() => {
+    if (salesRepFromUrl) {
+      setSalesRepFilter(salesRepFromUrl);
+      const found = salesReps.find((r) => String(r.id) === String(salesRepFromUrl));
+      setSelectedSalesRep(found || null);
+    }
+  }, [salesRepFromUrl, salesReps]);
 
   if (loading) {
     return (
@@ -317,6 +333,46 @@ export default function Orders() {
         </div>
       )}
 
+      {salesRepFilter && (
+        <div
+          style={{
+            marginBottom: 18,
+            padding: 12,
+            borderRadius: 8,
+            background: isDark ? "rgba(14,165,233,0.10)" : "#eff6ff",
+            border: `1px solid ${isDark ? "rgba(14,165,233,0.25)" : "#bfdbfe"}`,
+            color: c.text,
+            fontSize: 13,
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            gap: 12,
+            flexWrap: "wrap",
+          }}
+        >
+          <span>
+            Showing orders for sales rep:{" "}
+            <strong>
+              {salesReps.find((r) => String(r.id) === String(salesRepFilter))?.name || `Rep #${salesRepFilter}`}
+            </strong>
+          </span>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <button
+              onClick={() => nav(`/sales-reps/${salesRepFilter}`)}
+              style={smallBtn("#0ea5e9")}
+            >
+              Open Rep
+            </button>
+            <button
+              onClick={() => setSalesRepFilter("")}
+              style={smallBtn("#dc3545")}
+            >
+              Clear Filter
+            </button>
+          </div>
+        </div>
+      )}
+
       {stats && (
         <div
           style={{
@@ -338,7 +394,7 @@ export default function Orders() {
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "repeat(5, minmax(0, 1fr))",
+          gridTemplateColumns: "repeat(6, minmax(0, 1fr))",
           gap: 15,
           marginBottom: 20,
         }}
@@ -392,6 +448,18 @@ export default function Orders() {
             <option value="partial">Partial</option>
             <option value="paid">Paid</option>
             <option value="overdue">Overdue</option>
+          </select>
+        </div>
+
+        <div>
+          <label style={filterLabel(c)}>Sales Rep</label>
+          <select value={salesRepFilter} onChange={(e) => setSalesRepFilter(e.target.value)} style={inputStyle(c)}>
+            <option value="">All Reps</option>
+            {salesReps.map((rep) => (
+              <option key={rep.id} value={rep.id}>
+                {rep.name}
+              </option>
+            ))}
           </select>
         </div>
       </div>
@@ -480,26 +548,16 @@ export default function Orders() {
                       </div>
                     </td>
 
-                    <td style={tdMuted(c)}>
-                      <div>{order.sales_rep_name || "Unassigned"}</div>
-                      {order.sales_rep_id ? (
-                        <button
-                          onClick={() => nav(`/sales-reps/${order.sales_rep_id}/track`)}
-                          style={{
-                            marginTop: 4,
-                            padding: "4px 8px",
-                            background: "#16a34a",
-                            color: "white",
-                            border: "none",
-                            borderRadius: 999,
-                            cursor: "pointer",
-                            fontSize: 10,
-                            fontWeight: 700,
-                          }}
-                        >
-                          Track Rep
-                        </button>
-                      ) : null}
+                    <td
+                      onClick={() => order.sales_rep_id && nav(`/sales-reps/${order.sales_rep_id}`)}
+                      style={{
+                        ...tdMuted(c),
+                        color: order.sales_rep_id ? "#667eea" : c.textMuted,
+                        cursor: order.sales_rep_id ? "pointer" : "default",
+                        textDecoration: order.sales_rep_id ? "underline" : "none",
+                      }}
+                    >
+                      {order.sales_rep_name || "—"}
                     </td>
                     <td style={tdMuted(c)}>{order.location_name || "—"}</td>
                     <td style={tdMuted(c)}>{order.region_name || "—"}</td>

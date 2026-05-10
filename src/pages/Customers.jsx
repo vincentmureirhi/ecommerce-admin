@@ -73,6 +73,7 @@ export default function Customers() {
   };
 
   const locationFromUrl = searchParams.get("location") || "";
+  const repFromUrl = searchParams.get("sales_rep") || "";
 
   const [rows, setRows] = useState([]);
   const [locations, setLocations] = useState([]);
@@ -86,6 +87,7 @@ export default function Customers() {
   const [typeFilter, setTypeFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [locationFilter, setLocationFilter] = useState(locationFromUrl);
+  const [repFilter, setRepFilter] = useState(repFromUrl);
 
   const [showForm, setShowForm] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState(null);
@@ -109,6 +111,7 @@ export default function Customers() {
       if (typeFilter) filters.customer_type = typeFilter;
       if (statusFilter) filters.status = statusFilter;
       if (locationFilter) filters.location_id = locationFilter;
+      if (repFilter) filters.sales_rep_id = repFilter;
 
       const results = await Promise.allSettled([
         listCustomers(filters),
@@ -150,8 +153,12 @@ export default function Customers() {
   }, [locationFromUrl]);
 
   useEffect(() => {
+    setRepFilter(repFromUrl);
+  }, [repFromUrl]);
+
+  useEffect(() => {
     loadData();
-  }, [search, typeFilter, statusFilter, locationFilter]);
+  }, [search, typeFilter, statusFilter, locationFilter, repFilter]);
 
   function resetForm() {
     setEditingCustomer(null);
@@ -248,6 +255,7 @@ export default function Customers() {
     setSearch("");
     setTypeFilter("");
     setStatusFilter("");
+    setRepFilter("");
     handleLocationFilterChange("");
   }
 
@@ -278,6 +286,11 @@ export default function Customers() {
     return locations.find((loc) => String(loc.id) === String(locationFilter)) || null;
   }, [locationFilter, locations]);
 
+  const selectedRep = useMemo(() => {
+    if (!repFilter) return null;
+    return salesReps.find((rep) => String(rep.id) === String(repFilter)) || null;
+  }, [repFilter, salesReps]);
+
   const summary = useMemo(() => {
     const total = mergedRows.length;
     const routeCustomers = mergedRows.filter((r) => r.customer_type === "route").length;
@@ -297,7 +310,7 @@ export default function Customers() {
   }, [mergedRows]);
 
   const hasActiveFilters = Boolean(
-    search.trim() || typeFilter || statusFilter || locationFilter
+    search.trim() || typeFilter || statusFilter || locationFilter || repFilter
   );
 
   if (loading) {
@@ -407,7 +420,7 @@ export default function Customers() {
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "2fr 1fr 1fr 1fr auto",
+            gridTemplateColumns: "2fr 1fr 1fr 1fr 1fr auto",
             gap: 12,
             alignItems: "center",
           }}
@@ -474,6 +487,25 @@ export default function Customers() {
               <option key={loc.id} value={loc.id}>
                 {loc.name}
                 {loc.region_name ? ` · ${loc.region_name}` : ""}
+              </option>
+            ))}
+          </select>
+
+          <select
+            value={repFilter}
+            onChange={(e) => setRepFilter(e.target.value)}
+            style={{
+              padding: "10px 12px",
+              borderRadius: 10,
+              border: `1px solid ${colors.border}`,
+              background: colors.inputBg,
+              color: colors.text,
+            }}
+          >
+            <option value="">All Sales Reps</option>
+            {salesReps.map((rep) => (
+              <option key={rep.id} value={rep.id}>
+                {rep.name}
               </option>
             ))}
           </select>
@@ -568,6 +600,9 @@ export default function Customers() {
                 <strong>Location:</strong> {selectedLocation.name}
                 {selectedLocation.region_name ? ` · ${selectedLocation.region_name}` : ""}
               </span>
+            ) : null}
+            {selectedRep ? (
+              <span><strong>Sales Rep:</strong> {selectedRep.name}</span>
             ) : null}
           </div>
         </div>
@@ -898,14 +933,22 @@ export default function Customers() {
                         <div style={{ color: colors.text, fontSize: 13 }}>
                           {customer.location_name || "No location"}
                         </div>
-                        <div style={{ color: colors.textMuted, fontSize: 12 }}>
-                          {customer.sales_rep_name
-                            ? `${customer.sales_rep_name}${
-                                customer.sales_rep_id ? ` · Rep ID: ${customer.sales_rep_id}` : ""
-                              }`
-                            : customer.sales_rep_id
-                            ? `Rep ID: ${customer.sales_rep_id}`
-                            : "No rep assigned"}
+                        <div style={{ fontSize: 12 }}>
+                          {customer.sales_rep_id ? (
+                            <span
+                              onClick={() => nav(`/sales-reps/${customer.sales_rep_id}`)}
+                              style={{
+                                color: "#667eea",
+                                cursor: "pointer",
+                                textDecoration: "underline",
+                                fontWeight: 600,
+                              }}
+                            >
+                              {customer.sales_rep_name || `Rep #${customer.sales_rep_id}`}
+                            </span>
+                          ) : (
+                            <span style={{ color: colors.textMuted }}>No rep assigned</span>
+                          )}
                         </div>
                       </td>
 

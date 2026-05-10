@@ -194,6 +194,14 @@ export default function CustomerDetail() {
           >
             View All Orders
           </button>
+          {customer.sales_rep_id && (
+            <button
+              onClick={() => nav(`/sales-reps/${customer.sales_rep_id}`)}
+              style={btn("#0ea5e9")}
+            >
+              👤 View Sales Rep
+            </button>
+          )}
           <button
             onClick={() => nav("/customers")}
             style={btn(c.buttonBg || "#475569", c.text)}
@@ -240,19 +248,28 @@ export default function CustomerDetail() {
           <InfoBlock label="Status" value={customer.is_active ? "active" : "inactive"} c={c} />
           <InfoBlock label="Location" value={customer.location_name || "—"} c={c} />
           <InfoBlock label="Region" value={customer.region_name || "—"} c={c} />
-          <InfoBlock
-            label="Sales Rep"
-            value={
-              customer.sales_rep_name
-                ? `${customer.sales_rep_name}${
-                    customer.sales_rep_id ? ` · Rep ID: ${customer.sales_rep_id}` : ""
-                  }`
-                : customer.sales_rep_id
-                ? `Rep ID: ${customer.sales_rep_id}`
-                : "—"
-            }
-            c={c}
-          />
+          <div>
+            <div style={{ fontSize: 11, fontWeight: 700, color: c.textMuted, marginBottom: 4 }}>
+              SALES REP
+            </div>
+            {customer.sales_rep_id ? (
+              <span
+                onClick={() => nav(`/sales-reps/${customer.sales_rep_id}`)}
+                style={{
+                  fontSize: 14,
+                  fontWeight: 600,
+                  color: "#667eea",
+                  cursor: "pointer",
+                  textDecoration: "underline",
+                  wordBreak: "break-word",
+                }}
+              >
+                {customer.sales_rep_name || `Rep #${customer.sales_rep_id}`}
+              </span>
+            ) : (
+              <div style={{ fontSize: 14, fontWeight: 600, color: c.text }}>—</div>
+            )}
+          </div>
           <InfoBlock
             label="Created"
             value={customer.created_at ? new Date(customer.created_at).toLocaleDateString() : "—"}
