@@ -258,7 +258,7 @@ export default function Orders() {
           📦 Orders
         </h1>
         <p style={{ margin: 0, color: c.textMuted, fontSize: 13 }}>
-          All orders from normal and region customers, with clear status progression, print acknowledgement, and settlement tracking
+          All orders from normal and region customers, with clear status progression, print acknowledgment, and settlement tracking
         </p>
       </div>
 

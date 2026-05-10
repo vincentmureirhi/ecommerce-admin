@@ -50,11 +50,20 @@ export const ORDER_STATUS_FLOW = ORDER_STATUS_DEFINITIONS;
 
 export function getOrderStatusMeta(status) {
   const normalized = String(status || "").trim().toLowerCase();
+  const fallbackLabel = normalized
+    ? normalized
+        .replace(/_/g, " ")
+        .split(" ")
+        .filter(Boolean)
+        .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+        .join(" ")
+    : "Pending";
+
   return (
     ORDER_STATUS_LOOKUP[normalized] || {
       value: normalized || "pending",
       icon: "📦",
-      label: normalized ? normalized.replace(/_/g, " ") : "Pending",
+      label: fallbackLabel,
       trackingLabel: "Order update",
       nextStatus: null,
       nextAction: "Review order details",

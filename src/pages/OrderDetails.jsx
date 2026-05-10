@@ -191,7 +191,7 @@ export default function OrderDetails() {
             🛒 {order.order_number}
           </h1>
           <p style={{ margin: 0, color: c.textMuted, fontSize: 13 }}>
-            Order details, clear fulfillment status flow, printing acknowledgement, and settlement tracking
+            Order details, clear fulfillment status flow, printing acknowledgment, and settlement tracking
           </p>
         </div>
 
