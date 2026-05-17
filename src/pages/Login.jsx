@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { useTheme } from "../context/ThemeContext";
+import { api } from "../lib/client";
 
 const API_BASE = import.meta.env.VITE_API_URL || "/api";
 
@@ -13,9 +14,6 @@ export default function Login() {
   const isDark = Boolean(theme?.isDark);
   const toggleTheme =
     typeof theme?.toggleTheme === "function" ? theme.toggleTheme : () => {};
-
-  const loginFromContext =
-    typeof auth?.login === "function" ? auth.login : null;
 
   const isAuthed = Boolean(auth?.isAuthed);
 
@@ -64,53 +62,43 @@ export default function Login() {
     e.preventDefault();
     if (loading) return;
 
-    const email = String(form.email || "").trim();
-    const password = String(form.password || "");
-
-    if (!email || !password) {
-      setError("Email and password are required.");
-      return;
-    }
-
     setLoading(true);
     setError("");
 
     try {
-      if (loginFromContext) {
-        await loginFromContext(email, password);
-        navigate("/", { replace: true });
+      const email = form.email.trim();
+      const password = form.password;
+
+      if (!email || !password) {
+        setError("Email and password are required.");
+        setLoading(false);
         return;
       }
 
-      const response = await fetch(`${API_BASE}/auth/login`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ email, password }),
+      const response = await api.post("/auth/login", {
+        email,
+        password,
       });
 
-      const data = await response.json();
+      const data = response.data;
 
-      if (!response.ok || data?.success === false) {
-        throw new Error(
-          data?.message || data?.error || "Login failed. Check your credentials."
-        );
-      }
-
-      const token = data?.data?.token || data?.token || null;
-      const user = data?.data?.user || data?.user || { email };
+      const token = data?.data?.token || data?.token;
+      const user = data?.data?.user || data?.user;
 
       if (!token) {
-        throw new Error("Login succeeded but no token was returned.");
+        throw new Error("Login succeeded but no token returned");
       }
 
       localStorage.setItem("token", token);
       localStorage.setItem("user", JSON.stringify(user));
 
       window.location.href = "/";
-    } catch (err) {
-      setError(err?.message || "Login failed. Try again.");
+    }catch (err) {
+      setError(
+        err?.response?.data?.message ||
+          err?.message ||
+          "Login failed"
+      );
     } finally {
       setLoading(false);
     }
@@ -152,13 +140,12 @@ export default function Login() {
             gap: 12,
           }}
         >
-          <div style={{ minWidth: 0 }}>
+          <div>
             <div
               style={{
                 fontSize: 24,
                 fontWeight: 900,
                 color: colors.text,
-                lineHeight: 1.15,
               }}
             >
               Xpose Distributors
@@ -187,27 +174,18 @@ export default function Login() {
               height: 42,
               cursor: "pointer",
               fontSize: 18,
-              flexShrink: 0,
             }}
-            title="Toggle theme"
           >
             {isDark ? "☀️" : "🌙"}
           </button>
         </div>
 
         <div style={{ padding: 22 }}>
-          <div
-            style={{
-              marginBottom: 18,
-              color: colors.textMuted,
-              fontSize: 14,
-              lineHeight: 1.6,
-            }}
-          >
+          <div style={{ marginBottom: 18, color: colors.textMuted, fontSize: 14 }}>
             Sign in to access the admin dashboard.
           </div>
 
-          {error ? (
+          {error && (
             <div
               style={{
                 marginBottom: 16,
@@ -222,67 +200,43 @@ export default function Login() {
             >
               {error}
             </div>
-          ) : null}
+          )}
 
           <form onSubmit={handleSubmit}>
             <div style={{ marginBottom: 14 }}>
-              <label
-                style={{
-                  display: "block",
-                  marginBottom: 6,
-                  fontWeight: 700,
-                  fontSize: 13,
-                  color: colors.text,
-                }}
-              >
+              <label style={{ fontWeight: 700, fontSize: 13, color: colors.text }}>
                 Email
               </label>
-
               <input
                 type="email"
                 value={form.email}
                 onChange={(e) => updateField("email", e.target.value)}
-                placeholder="Enter your email"
-                autoComplete="email"
                 style={{
                   width: "100%",
-                  padding: "13px 14px",
+                  padding: 13,
                   borderRadius: 14,
                   border: `1px solid ${colors.inputBorder}`,
                   background: colors.inputBg,
                   color: colors.text,
-                  outline: "none",
                 }}
               />
             </div>
 
             <div style={{ marginBottom: 18 }}>
-              <label
-                style={{
-                  display: "block",
-                  marginBottom: 6,
-                  fontWeight: 700,
-                  fontSize: 13,
-                  color: colors.text,
-                }}
-              >
+              <label style={{ fontWeight: 700, fontSize: 13, color: colors.text }}>
                 Password
               </label>
-
               <input
                 type="password"
                 value={form.password}
                 onChange={(e) => updateField("password", e.target.value)}
-                placeholder="Enter your password"
-                autoComplete="current-password"
                 style={{
                   width: "100%",
-                  padding: "13px 14px",
+                  padding: 13,
                   borderRadius: 14,
                   border: `1px solid ${colors.inputBorder}`,
                   background: colors.inputBg,
                   color: colors.text,
-                  outline: "none",
                 }}
               />
             </div>
@@ -292,41 +246,32 @@ export default function Login() {
               disabled={loading}
               style={{
                 width: "100%",
-                padding: "13px 16px",
+                padding: 13,
                 borderRadius: 14,
                 border: "none",
                 background: colors.buttonBg,
                 color: colors.buttonText,
                 fontWeight: 800,
-                fontSize: 15,
                 cursor: "pointer",
-                opacity: loading ? 0.8 : 1,
+                opacity: loading ? 0.7 : 1,
               }}
             >
               {loading ? "Signing in..." : "Sign In"}
             </button>
           </form>
 
-          <div
-            style={{
-              marginTop: 14,
-              display: "grid",
-              gap: 10,
-            }}
-          >
+          <div style={{ marginTop: 14 }}>
             <Link
               to="/route-login"
               style={{
                 display: "block",
-                width: "100%",
                 textAlign: "center",
-                padding: "13px 16px",
+                padding: 13,
                 borderRadius: 14,
                 border: `1px solid ${colors.border}`,
                 background: colors.secondaryBtn,
                 color: colors.secondaryBtnText,
                 fontWeight: 800,
-                fontSize: 15,
               }}
             >
               Route Customer Login
