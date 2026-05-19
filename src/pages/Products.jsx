@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { useTheme } from "../context/ThemeContext";
+import { api } from "../lib/client";
 
 function money(value) {
   return `KSh ${Number(value || 0).toLocaleString()}`;
@@ -185,43 +186,78 @@ export default function Products() {
   const [salesModal, setSalesModal] = useState(null);
   const [imagePreview, setImagePreview] = useState(null);
 
+  // ==================== UPDATED FUNCTIONS ====================
+
   async function loadProducts() {
-    const response = await fetch("/api/products", {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    const data = await response.json();
+    try {
+      const response = await api.get("/products", {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
 
-    if (!response.ok || data?.success === false) {
-      throw new Error(data?.message || data?.error || "Failed to load products.");
+      const data = response.data;
+
+      if (data?.success === false) {
+        throw new Error(data?.message || "Failed to load products.");
+      }
+
+      setProducts(data?.data || []);
+    } catch (err) {
+      throw new Error(
+        err?.response?.data?.message ||
+          err?.message ||
+          "Failed to load products."
+      );
     }
-
-    setProducts(data?.data || []);
   }
 
   async function loadCategories() {
-    const response = await fetch("/api/categories", {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    const data = await response.json();
+    try {
+      const response = await api.get("/categories", {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
 
-    if (!response.ok || data?.success === false) {
-      throw new Error(data?.message || data?.error || "Failed to load categories.");
+      const data = response.data;
+
+      if (data?.success === false) {
+        throw new Error(data?.message || "Failed to load categories.");
+      }
+
+      setCategories(data?.data || []);
+    } catch (err) {
+      throw new Error(
+        err?.response?.data?.message ||
+          err?.message ||
+          "Failed to load categories."
+      );
     }
-
-    setCategories(data?.data || []);
   }
 
   async function loadSuppliers() {
-    const response = await fetch("/api/suppliers", {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    const data = await response.json();
+    try {
+      const response = await api.get("/suppliers", {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
 
-    if (!response.ok || data?.success === false) {
-      throw new Error(data?.message || data?.error || "Failed to load suppliers.");
+      const data = response.data;
+
+      if (data?.success === false) {
+        throw new Error(data?.message || "Failed to load suppliers.");
+      }
+
+      setSuppliers(data?.data || []);
+    } catch (err) {
+      throw new Error(
+        err?.response?.data?.message ||
+          err?.message ||
+          "Failed to load suppliers."
+      );
     }
-
-    setSuppliers(data?.data || []);
   }
 
   async function refreshAll() {
@@ -603,6 +639,7 @@ export default function Products() {
           />
         </div>
 
+        {/* Filters Section */}
         <div
           style={{
             background: c.card,
@@ -777,6 +814,7 @@ export default function Products() {
           </div>
         ) : (
           <>
+            {/* Product Cards */}
             <div
               style={{
                 display: "grid",
@@ -803,6 +841,7 @@ export default function Products() {
                       gap: 14,
                     }}
                   >
+                    {/* Card Content - Same as original */}
                     <div
                       style={{
                         display: "flex",
@@ -1004,6 +1043,7 @@ export default function Products() {
               })}
             </div>
 
+            {/* Table View */}
             <div
               style={{
                 background: c.card,
@@ -1132,6 +1172,8 @@ export default function Products() {
     </div>
   );
 }
+
+// ====================== HELPER COMPONENTS ======================
 
 function InfoBlock({ label, value, c }) {
   return (
