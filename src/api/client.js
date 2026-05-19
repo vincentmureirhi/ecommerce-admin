@@ -4,24 +4,13 @@ const API_BASE_URL =
   import.meta.env.VITE_API_URL ||
   "https://ecommerce-backend-9s3f.onrender.com/api";
 
-console.log("🌍 API BASE URL:", API_BASE_URL);
-
 const client = axios.create({
   baseURL: API_BASE_URL,
   timeout: 20000,
-  headers: {
-    "Content-Type": "application/json",
-  },
 });
 
 client.interceptors.request.use((config) => {
   const token = localStorage.getItem("token");
-
-  console.log("📡 Request:", {
-    method: config.method,
-    baseURL: config.baseURL,
-    url: config.url,
-  });
 
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
@@ -33,11 +22,6 @@ client.interceptors.request.use((config) => {
 client.interceptors.response.use(
   (response) => response,
   (error) => {
-    console.error(
-      `❌ Fetch error [${error.config?.url}]`,
-      error.response?.data || error.message
-    );
-
     if (error.response?.status === 401) {
       localStorage.removeItem("token");
       localStorage.removeItem("user");
