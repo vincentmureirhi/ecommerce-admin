@@ -1,5 +1,8 @@
 import client from "./client";
 
+// Debug log to check base URL
+console.log("PAYMENTS API BASE URL:", client.defaults.baseURL);
+
 export async function listPayments(filters = {}) {
   const params = new URLSearchParams();
 

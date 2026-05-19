@@ -1,5 +1,8 @@
 import client from "./client";
 
+// Debug log to check base URL
+console.log("ORDERS API BASE URL:", client.defaults.baseURL);
+
 export async function listOrders(filters = {}) {
   const params = new URLSearchParams();
 
