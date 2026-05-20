@@ -35,10 +35,11 @@ export async function getFlashSaleProducts(saleId) {
   return res.data;
 }
 
-export async function addProductToFlashSale(saleId, productId, discountOverride = null) {
-  const body = { product_id: productId };
-  if (discountOverride !== null) body.discount_override = discountOverride;
-  const res = await client.post(`/flash-sales/${saleId}/products`, body);
+// FIX: backend expects { product_ids: [...] } (array), not { product_id: ... } (singular)
+export async function addProductToFlashSale(saleId, productId) {
+  const res = await client.post(`/flash-sales/${saleId}/products`, {
+    product_ids: [productId],
+  });
   return res.data;
 }
 

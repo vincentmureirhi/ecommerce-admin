@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useTheme } from "../context/ThemeContext";
 import { getThemeColors } from "../utils/themeColors";
 import {
@@ -7,6 +7,7 @@ import {
   updateBlogPost,
   deleteBlogPost,
 } from "../api/blog";
+import client from "../api/client";
 
 const EMPTY_FORM = {
   title: "",
@@ -49,6 +50,19 @@ function statusBadge(status, isDark) {
   };
 }
 
+// Upload an image file to the backend and return its URL
+async function uploadImage(file) {
+  const formData = new FormData();
+  formData.append("image", file);
+  const res = await client.post("/uploads", formData, {
+    headers: { "Content-Type": "multipart/form-data" },
+  });
+  // Backend returns { image_url: "/images/filename.jpg" }
+  const imageUrl = res.data?.data?.image_url || res.data?.image_url;
+  if (!imageUrl) throw new Error("Upload failed — no image_url returned");
+  return imageUrl;
+}
+
 export default function Blog() {
   const { isDark } = useTheme();
   const c = getThemeColors(isDark);
@@ -57,7 +71,6 @@ export default function Blog() {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
   const [successMsg, setSuccessMsg] = useState("");
-
   const [showForm, setShowForm] = useState(false);
   const [formMode, setFormMode] = useState("create");
   const [editingId, setEditingId] = useState(null);
@@ -65,6 +78,9 @@ export default function Blog() {
   const [formLoading, setFormLoading] = useState(false);
   const [formErr, setFormErr] = useState("");
 
+  // Image upload state
+  const [imageUploading, setImageUploading] = useState(false);
+  const fileInputRef = useRef(null);
   const [deletingId, setDeletingId] = useState(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
 
@@ -77,7 +93,7 @@ export default function Blog() {
     try {
       setLoading(true);
       setErr("");
-      const res = await listBlogPosts();
+      const res = await listBlogPosts({ all: "true" });
       const rows = Array.isArray(res?.data) ? res.data : Array.isArray(res) ? res : [];
       setPosts(rows);
     } catch (e) {
@@ -113,6 +129,29 @@ export default function Blog() {
     setShowForm(true);
   }
 
+  // Handle image file selection — upload immediately and store URL
+  async function handleImageFileChange(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setImageUploading(true);
+    setFormErr("");
+
+    try {
+      const url = await uploadImage(file);
+
+      const backendBase = (import.meta.env.VITE_API_URL || "").replace(/\/api$/, "");
+      const fullUrl = url.startsWith("http") ? url : `${backendBase}${url}`;
+
+      setForm((f) => ({ ...f, featured_image_url: fullUrl }));
+    } catch (e) {
+      setFormErr(e?.response?.data?.message || e?.message || "Image upload failed");
+    } finally {
+      setImageUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  }
+
   async function handleFormSubmit(e) {
     e.preventDefault();
     if (!form.title.trim()) {
@@ -131,7 +170,10 @@ export default function Blog() {
       title: form.title.trim(),
       content: form.content.trim(),
       featured_image_url: form.featured_image_url.trim() || null,
-      product_id: (() => { const parsed = parseInt(form.product_id, 10); return form.product_id && parsed > 0 ? parsed : null; })(),
+      product_id: (() => {
+        const parsed = parseInt(form.product_id, 10);
+        return form.product_id && parsed > 0 ? parsed : null;
+      })(),
       status: form.status,
     };
 
@@ -146,7 +188,7 @@ export default function Blog() {
       setShowForm(false);
       loadPosts();
     } catch (e) {
-      setFormErr(e?.message || "Failed to save blog post");
+      setFormErr(e?.response?.data?.message || e?.message || "Failed to save blog post");
     } finally {
       setFormLoading(false);
     }
@@ -161,7 +203,7 @@ export default function Blog() {
       showSuccess("Blog post deleted");
       loadPosts();
     } catch (e) {
-      setErr(e?.message || "Failed to delete blog post");
+      setErr(e?.response?.data?.message || e?.message || "Failed to delete blog post");
       setDeletingId(null);
     } finally {
       setDeleteLoading(false);
@@ -222,10 +264,9 @@ export default function Blog() {
             📝 Blog Management
           </h1>
           <p style={{ margin: 0, color: c.textMuted, fontSize: 13 }}>
-            Create and manage product blog posts — published posts appear on the storefront
+            Create, edit, and manage blog posts for the storefront
           </p>
         </div>
-
         <button
           onClick={openCreate}
           style={{
@@ -248,15 +289,16 @@ export default function Blog() {
         <div
           style={{
             background: isDark ? "rgba(16,185,129,0.15)" : "#d1fae5",
-            color: isDark ? "#4ade80" : "#065f46",
-            padding: "10px 16px",
+            color: isDark ? "#4ade80" : "#047857",
+            border: `1px solid ${isDark ? "rgba(16,185,129,0.3)" : "#a7f3d0"}`,
+            padding: 12,
             borderRadius: 8,
             marginBottom: 16,
             fontSize: 13,
             fontWeight: 600,
           }}
         >
-          ✅ {successMsg}
+          ✓ {successMsg}
         </div>
       )}
 
@@ -264,12 +306,12 @@ export default function Blog() {
       {err && (
         <div
           style={{
-            background: isDark ? "rgba(239,68,68,0.15)" : "#fee2e2",
+            background: isDark ? "rgba(239,68,68,0.10)" : "#fee2e2",
             color: isDark ? "#fca5a5" : "#b91c1c",
-            padding: "10px 16px",
+            border: `1px solid ${isDark ? "rgba(239,68,68,0.25)" : "#fecaca"}`,
+            padding: 12,
             borderRadius: 8,
             marginBottom: 16,
-            fontSize: 13,
           }}
         >
           ⚠️ {err}
@@ -296,14 +338,13 @@ export default function Blog() {
           </div>
         ) : (
           <div style={{ overflowX: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 700 }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 760 }}>
               <thead>
                 <tr style={{ background: c.headerBg, borderBottom: `1px solid ${c.border}` }}>
                   <th style={thStyle}>Title</th>
                   <th style={thStyle}>Status</th>
-                  <th style={thStyle}>Product ID</th>
                   <th style={thStyle}>Image</th>
-                  <th style={thStyle}>Created</th>
+                  <th style={thStyle}>Date</th>
                   <th style={{ ...thStyle, textAlign: "center" }}>Actions</th>
                 </tr>
               </thead>
@@ -315,59 +356,54 @@ export default function Blog() {
                       key={post.id}
                       style={{
                         borderBottom: `1px solid ${c.border}`,
-                        background:
-                          idx % 2 === 0
-                            ? "transparent"
-                            : isDark
-                            ? "rgba(255,255,255,0.01)"
-                            : "#fafafa",
+                        background: idx % 2 === 0 ? "transparent" : isDark ? "rgba(255,255,255,0.01)" : "#fafafa",
                       }}
                     >
-                      <td style={{ ...tdStyle, fontWeight: 700 }}>
-                        {post.title}
-                        {post.content && (
+                      <td style={{ ...tdStyle, fontWeight: 700, maxWidth: 280 }}>
+                        <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {post.title}
+                        </div>
+                        {post.excerpt && (
                           <div
                             style={{
                               fontSize: 11,
                               color: c.textMuted,
-                              marginTop: 2,
                               fontWeight: 400,
-                              maxWidth: 320,
+                              marginTop: 2,
                               overflow: "hidden",
                               textOverflow: "ellipsis",
                               whiteSpace: "nowrap",
                             }}
                           >
-                            {post.content.substring(0, 80)}…
+                            {post.excerpt}
                           </div>
                         )}
                       </td>
                       <td style={tdStyle}>
                         <span
                           style={{
+                            ...badge,
                             padding: "4px 10px",
-                            borderRadius: 999,
+                            borderRadius: 6,
                             fontSize: 11,
                             fontWeight: 700,
-                            ...badge,
+                            display: "inline-block",
+                            textTransform: "capitalize",
                           }}
                         >
-                          {post.status === "published" ? "✅ Published" : "📄 Draft"}
+                          {post.status}
                         </span>
-                      </td>
-                      <td style={{ ...tdStyle, color: c.textMuted }}>
-                        {post.product_id || "—"}
                       </td>
                       <td style={tdStyle}>
                         {post.featured_image_url ? (
                           <img
                             src={post.featured_image_url}
-                            alt="cover"
+                            alt=""
                             style={{
-                              width: 48,
-                              height: 36,
+                              width: 60,
+                              height: 40,
                               objectFit: "cover",
-                              borderRadius: 4,
+                              borderRadius: 5,
                               border: `1px solid ${c.border}`,
                             }}
                             onError={(e) => {
@@ -375,13 +411,21 @@ export default function Blog() {
                             }}
                           />
                         ) : (
-                          <span style={{ color: c.textMuted, fontSize: 11 }}>No image</span>
+                          <span
+                            style={{
+                              fontSize: 11,
+                              color: c.textMuted,
+                              background: isDark ? "rgba(255,255,255,0.05)" : "#f1f5f9",
+                              padding: "4px 8px",
+                              borderRadius: 4,
+                            }}
+                          >
+                            No image
+                          </span>
                         )}
                       </td>
-                      <td style={{ ...tdStyle, color: c.textMuted }}>
-                        {post.created_at
-                          ? new Date(post.created_at).toLocaleDateString()
-                          : "—"}
+                      <td style={{ ...tdStyle, color: c.textMuted, whiteSpace: "nowrap" }}>
+                        {post.created_at ? new Date(post.created_at).toLocaleDateString() : "—"}
                       </td>
                       <td style={{ ...tdStyle, textAlign: "center" }}>
                         <div style={{ display: "flex", gap: 6, justifyContent: "center" }}>
@@ -426,7 +470,7 @@ export default function Blog() {
         )}
       </div>
 
-      {/* Create / Edit Modal */}
+      {/* ─── Create / Edit Modal ─── */}
       {showForm && (
         <ModalOverlay onClose={() => setShowForm(false)}>
           <div
@@ -435,7 +479,7 @@ export default function Blog() {
               borderRadius: 12,
               padding: 28,
               width: "100%",
-              maxWidth: 560,
+              maxWidth: 580,
               maxHeight: "90vh",
               overflowY: "auto",
               boxShadow: "0 20px 60px rgba(0,0,0,0.3)",
@@ -483,6 +527,7 @@ export default function Blog() {
             )}
 
             <form onSubmit={handleFormSubmit}>
+              {/* Title */}
               <div style={{ marginBottom: 14 }}>
                 <label style={labelStyle}>Title *</label>
                 <input
@@ -494,6 +539,7 @@ export default function Blog() {
                 />
               </div>
 
+              {/* Content */}
               <div style={{ marginBottom: 14 }}>
                 <label style={labelStyle}>Content *</label>
                 <textarea
@@ -506,37 +552,93 @@ export default function Blog() {
                 />
               </div>
 
+              {/* Image Upload */}
               <div style={{ marginBottom: 14 }}>
-                <label style={labelStyle}>Featured Image URL</label>
+                <label style={labelStyle}>Featured Image</label>
+                <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8 }}>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/jpeg,image/png,image/gif,image/webp"
+                    style={{ display: "none" }}
+                    onChange={handleImageFileChange}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={imageUploading}
+                    style={{
+                      padding: "8px 14px",
+                      background: isDark ? "rgba(102,126,234,0.2)" : "#ede9fe",
+                      color: isDark ? "#a78bfa" : "#5b21b6",
+                      border: `1px solid ${isDark ? "rgba(102,126,234,0.3)" : "#c4b5fd"}`,
+                      borderRadius: 7,
+                      fontSize: 12,
+                      fontWeight: 700,
+                      cursor: imageUploading ? "not-allowed" : "pointer",
+                      opacity: imageUploading ? 0.7 : 1,
+                    }}
+                  >
+                    {imageUploading ? "⏳ Uploading..." : "📁 Upload Image"}
+                  </button>
+                  <span style={{ fontSize: 11, color: c.textMuted }}>
+                    JPG, PNG, GIF, WebP · max 5 MB
+                  </span>
+                </div>
+
                 <input
                   type="url"
                   value={form.featured_image_url}
-                  onChange={(e) =>
-                    setForm((f) => ({ ...f, featured_image_url: e.target.value }))
-                  }
-                  placeholder="https://example.com/image.jpg"
+                  onChange={(e) => setForm((f) => ({ ...f, featured_image_url: e.target.value }))}
+                  placeholder="Or paste an image URL here..."
                   style={inputStyle}
                 />
+
                 {form.featured_image_url && (
-                  <img
-                    src={form.featured_image_url}
-                    alt="preview"
-                    style={{
-                      marginTop: 8,
-                      width: "100%",
-                      maxHeight: 120,
-                      objectFit: "cover",
-                      borderRadius: 6,
-                      border: `1px solid ${c.border}`,
-                    }}
-                    onError={(e) => {
-                      e.target.style.display = "none";
-                    }}
-                  />
+                  <div style={{ position: "relative", marginTop: 8 }}>
+                    <img
+                      src={form.featured_image_url}
+                      alt="preview"
+                      style={{
+                        width: "100%",
+                        maxHeight: 150,
+                        objectFit: "cover",
+                        borderRadius: 8,
+                        border: `1px solid ${c.border}`,
+                      }}
+                      onError={(e) => { e.target.style.display = "none"; }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setForm((f) => ({ ...f, featured_image_url: "" }))}
+                      style={{
+                        position: "absolute",
+                        top: 6,
+                        right: 6,
+                        background: "rgba(0,0,0,0.6)",
+                        color: "#fff",
+                        border: "none",
+                        borderRadius: 4,
+                        padding: "2px 6px",
+                        fontSize: 11,
+                        cursor: "pointer",
+                      }}
+                    >
+                      ✕ Remove
+                    </button>
+                  </div>
                 )}
               </div>
 
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 14 }}>
+              {/* Product ID + Status */}
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "1fr 1fr",
+                  gap: 14,
+                  marginBottom: 20,
+                }}
+              >
                 <div>
                   <label style={labelStyle}>Associated Product ID</label>
                   <input
@@ -549,7 +651,6 @@ export default function Blog() {
                     style={inputStyle}
                   />
                 </div>
-
                 <div>
                   <label style={labelStyle}>Status</label>
                   <select
@@ -563,6 +664,7 @@ export default function Blog() {
                 </div>
               </div>
 
+              {/* Actions */}
               <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
                 <button
                   type="button"
@@ -582,17 +684,17 @@ export default function Blog() {
                 </button>
                 <button
                   type="submit"
-                  disabled={formLoading}
+                  disabled={formLoading || imageUploading}
                   style={{
                     padding: "10px 20px",
                     background: "#667eea",
                     color: "white",
                     border: "none",
                     borderRadius: 8,
-                    cursor: formLoading ? "not-allowed" : "pointer",
+                    cursor: formLoading || imageUploading ? "not-allowed" : "pointer",
                     fontWeight: 700,
                     fontSize: 13,
-                    opacity: formLoading ? 0.7 : 1,
+                    opacity: formLoading || imageUploading ? 0.7 : 1,
                   }}
                 >
                   {formLoading
@@ -607,7 +709,7 @@ export default function Blog() {
         </ModalOverlay>
       )}
 
-      {/* Delete confirmation */}
+      {/* Delete Confirmation */}
       {deletingId && (
         <ModalOverlay onClose={() => setDeletingId(null)}>
           <div
