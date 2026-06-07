@@ -22,7 +22,6 @@ function getSaleStatus(sale) {
   const now = new Date();
   const start = new Date(sale.start_date);
   const end = new Date(sale.end_date);
-
   if (now < start) return "upcoming";
   if (now > end) return "expired";
   return "active";
@@ -99,7 +98,7 @@ export default function FlashSales() {
 
   // Create / Edit modal
   const [showForm, setShowForm] = useState(false);
-  const [formMode, setFormMode] = useState("create"); // "create" | "edit"
+  const [formMode, setFormMode] = useState("create");
   const [editingId, setEditingId] = useState(null);
   const [form, setForm] = useState(EMPTY_FORM);
   const [formLoading, setFormLoading] = useState(false);
@@ -198,7 +197,7 @@ export default function FlashSales() {
         showSuccess("Flash sale updated successfully");
       }
       setShowForm(false);
-      loadSales();
+      await loadSales();   // ← Updated
     } catch (e) {
       setFormErr(e?.response?.data?.message || e?.message || "Failed to save flash sale");
     } finally {
@@ -213,7 +212,7 @@ export default function FlashSales() {
       await deleteFlashSale(deletingId);
       setDeletingId(null);
       showSuccess("Flash sale deleted");
-      loadSales();
+      await loadSales();   // ← Updated
     } catch (e) {
       setErr(e?.message || "Failed to delete flash sale");
       setDeletingId(null);
@@ -234,7 +233,6 @@ export default function FlashSales() {
         getFlashSaleProducts(sale.id),
         listProducts(),
       ]);
-
       const sp = Array.isArray(saleProdsRes?.data)
         ? saleProdsRes.data
         : Array.isArray(saleProdsRes)
@@ -324,7 +322,6 @@ export default function FlashSales() {
             Create and manage time-limited flash sales &amp; product discounts
           </p>
         </div>
-
         <button
           onClick={openCreate}
           style={{
@@ -342,7 +339,7 @@ export default function FlashSales() {
         </button>
       </div>
 
-      {/* Success message */}
+      {/* Success */}
       {successMsg && (
         <div
           style={{
@@ -427,7 +424,6 @@ export default function FlashSales() {
                 {sales.map((sale, idx) => {
                   const status = getSaleStatus(sale);
                   const badge = statusBadgeStyle(status, isDark);
-
                   return (
                     <tr
                       key={sale.id}
@@ -444,7 +440,6 @@ export default function FlashSales() {
                           </div>
                         )}
                       </td>
-
                       <td style={tdMuted(c)}>
                         <span
                           style={{
@@ -461,15 +456,12 @@ export default function FlashSales() {
                             : `KES ${sale.discount_value}`}
                         </span>
                       </td>
-
                       <td style={tdMuted(c)}>
                         {sale.start_date ? new Date(sale.start_date).toLocaleString() : "—"}
                       </td>
-
                       <td style={tdMuted(c)}>
                         {sale.end_date ? new Date(sale.end_date).toLocaleString() : "—"}
                       </td>
-
                       <td style={{ ...tdBase, textAlign: "center" }}>
                         <span
                           style={{
@@ -486,7 +478,6 @@ export default function FlashSales() {
                           {status}
                         </span>
                       </td>
-
                       <td style={{ ...tdBase, textAlign: "center" }}>
                         <button
                           onClick={() => openProductsModal(sale)}
@@ -501,16 +492,12 @@ export default function FlashSales() {
                             cursor: "pointer",
                           }}
                         >
-                          {sale.products_count != null ? `${sale.products_count} products` : "Manage"}
+                          {sale.product_count != null ? `${sale.product_count} products` : "Manage"}
                         </button>
                       </td>
-
                       <td style={{ ...tdBase, textAlign: "center" }}>
                         <div style={{ display: "flex", gap: 6, justifyContent: "center" }}>
-                          <button
-                            onClick={() => openEdit(sale)}
-                            style={smallBtn("#667eea")}
-                          >
+                          <button onClick={() => openEdit(sale)} style={smallBtn("#667eea")}>
                             Edit
                           </button>
                           <button
@@ -530,7 +517,7 @@ export default function FlashSales() {
         )}
       </div>
 
-      {/* ─── Create / Edit Modal ─── */}
+      {/* Create / Edit Modal */}
       {showForm && (
         <ModalOverlay onClose={() => setShowForm(false)}>
           <div
@@ -608,7 +595,6 @@ export default function FlashSales() {
                     <option value="fixed">Fixed Amount (KES)</option>
                   </select>
                 </div>
-
                 <div>
                   <label style={labelStyle(c)}>
                     Discount Value *{" "}
@@ -641,7 +627,6 @@ export default function FlashSales() {
                     style={inputStyle(c)}
                   />
                 </div>
-
                 <div>
                   <label style={labelStyle(c)}>End Date &amp; Time *</label>
                   <input
@@ -694,7 +679,7 @@ export default function FlashSales() {
         </ModalOverlay>
       )}
 
-      {/* ─── Delete Confirmation Modal ─── */}
+      {/* Delete Confirmation Modal */}
       {deletingId && (
         <ModalOverlay onClose={() => setDeletingId(null)}>
           <div
@@ -711,8 +696,7 @@ export default function FlashSales() {
             <div style={{ fontSize: 40, marginBottom: 12 }}>🗑️</div>
             <h3 style={{ marginTop: 0, marginBottom: 10, color: c.text }}>Delete Flash Sale?</h3>
             <p style={{ color: c.textMuted, marginBottom: 24, fontSize: 13 }}>
-              This action cannot be undone. The flash sale and all its product assignments will be
-              permanently removed.
+              This action cannot be undone. The flash sale and all its product assignments will be permanently removed.
             </p>
             <div style={{ display: "flex", gap: 10, justifyContent: "center" }}>
               <button onClick={() => setDeletingId(null)} style={btnSecondary(c)}>
@@ -740,7 +724,7 @@ export default function FlashSales() {
         </ModalOverlay>
       )}
 
-      {/* ─── Products Management Modal ─── */}
+      {/* Products Management Modal */}
       {productsModalSale && (
         <ModalOverlay onClose={() => setProductsModalSale(null)}>
           <div
@@ -802,12 +786,11 @@ export default function FlashSales() {
               </div>
             ) : (
               <>
-                {/* Current products in sale */}
+                {/* Current products */}
                 <div style={{ marginBottom: 24 }}>
                   <h4 style={{ margin: "0 0 12px 0", color: c.text, fontSize: 14 }}>
                     Current Sale Products ({saleProducts.length})
                   </h4>
-
                   {saleProducts.length === 0 ? (
                     <div
                       style={{
@@ -845,21 +828,16 @@ export default function FlashSales() {
                             <div style={{ fontWeight: 600, color: c.text, fontSize: 13 }}>
                               {sp.product_name || sp.name}
                             </div>
-                            {sp.sku && (
+                            {sp.sku && <div style={{ fontSize: 11, color: c.textMuted }}>SKU: {sp.sku}</div>}
+                            {(sp.retail_price != null || sp.original_price != null) && (
                               <div style={{ fontSize: 11, color: c.textMuted }}>
-                                SKU: {sp.sku}
-                              </div>
-                            )}
-                            {sp.original_price != null && (
-                              <div style={{ fontSize: 11, color: c.textMuted }}>
-                                Price: {money(sp.original_price)} →{" "}
+                                Price: {money(sp.retail_price ?? sp.original_price)} →{" "}
                                 <span style={{ color: isDark ? "#4ade80" : "#16a34a", fontWeight: 700 }}>
-                                  {money(sp.discounted_price || sp.sale_price)}
+                                  {money(sp.discounted_price ?? sp.sale_price)}
                                 </span>
                               </div>
                             )}
                           </div>
-
                           <button
                             onClick={() => handleRemoveProduct(sp.product_id || sp.id)}
                             disabled={removingProductId === (sp.product_id || sp.id)}
@@ -882,12 +860,11 @@ export default function FlashSales() {
                   )}
                 </div>
 
-                {/* Add products */}
+                {/* Add new products */}
                 <div>
                   <h4 style={{ margin: "0 0 10px 0", color: c.text, fontSize: 14 }}>
                     Add Products to Sale
                   </h4>
-
                   <input
                     type="text"
                     placeholder="Search products by name or SKU..."
@@ -895,7 +872,6 @@ export default function FlashSales() {
                     onChange={(e) => setProductSearch(e.target.value)}
                     style={{ ...inputStyle(c), marginBottom: 12 }}
                   />
-
                   <div
                     style={{
                       border: `1px solid ${c.border}`,
@@ -911,7 +887,6 @@ export default function FlashSales() {
                     ) : (
                       filteredAllProducts.map((p, idx) => {
                         const alreadyAdded = saleProductIds.has(p.id);
-
                         return (
                           <div
                             key={p.id}
@@ -920,10 +895,7 @@ export default function FlashSales() {
                               justifyContent: "space-between",
                               alignItems: "center",
                               padding: "8px 14px",
-                              borderBottom:
-                                idx < filteredAllProducts.length - 1
-                                  ? `1px solid ${c.border}`
-                                  : "none",
+                              borderBottom: idx < filteredAllProducts.length - 1 ? `1px solid ${c.border}` : "none",
                               background: alreadyAdded
                                 ? isDark
                                   ? "rgba(16,185,129,0.08)"
@@ -941,18 +913,11 @@ export default function FlashSales() {
                               </div>
                               <div style={{ fontSize: 11, color: c.textMuted }}>
                                 {p.sku ? `SKU: ${p.sku} · ` : ""}
-                                {money(p.selling_price || p.price)}
+                                {money(p.retail_price ?? p.selling_price ?? p.price ?? 0)}
                               </div>
                             </div>
-
                             {alreadyAdded ? (
-                              <span
-                                style={{
-                                  fontSize: 11,
-                                  color: isDark ? "#4ade80" : "#16a34a",
-                                  fontWeight: 700,
-                                }}
-                              >
+                              <span style={{ fontSize: 11, color: isDark ? "#4ade80" : "#16a34a", fontWeight: 700 }}>
                                 ✓ Added
                               </span>
                             ) : (
@@ -989,6 +954,7 @@ export default function FlashSales() {
   );
 }
 
+/* ====================== Modal Overlay ====================== */
 function ModalOverlay({ children, onClose }) {
   return (
     <div
@@ -1011,11 +977,8 @@ function ModalOverlay({ children, onClose }) {
   );
 }
 
-const tdBase = {
-  padding: 14,
-  fontSize: 13,
-  verticalAlign: "middle",
-};
+/* ====================== Helper Styles ====================== */
+const tdBase = { padding: 14, fontSize: 13, verticalAlign: "middle" };
 
 function tdPrimary(c) {
   return { ...tdBase, color: c.text, fontWeight: 700 };

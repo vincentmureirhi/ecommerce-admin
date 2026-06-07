@@ -241,6 +241,11 @@ function PaymentsDetailModal({
       setSaving(true);
       setErr("");
 
+      if ((status === "completed" || status === "manually_resolved") && !receipt.trim() && !reference.trim()) {
+        setErr("Enter an M-Pesa receipt or reference code before completing this payment.");
+        return;
+      }
+
       await reconcilePayment(payment.id, {
         status,
         reconciliation_status: reconciliationStatus,
@@ -481,6 +486,11 @@ function ManualPaymentModal({ isDark, onClose, onSaved }) {
       setSaving(true);
       setErr("");
 
+      if (form.method === "mpesa" && !form.reference.trim()) {
+        setErr("M-Pesa manual payments require the receipt/reference code.");
+        return;
+      }
+
       await createPayment({
         order_id: Number(form.order_id),
         amount: Number(form.amount),
@@ -590,11 +600,12 @@ function ManualPaymentModal({ isDark, onClose, onSaved }) {
             />
           </Field>
 
-          <Field label="Reference (optional)" c={c}>
+          <Field label={form.method === "mpesa" ? "M-Pesa Receipt / Reference" : "Reference (optional)"} c={c}>
             <input
               type="text"
               value={form.reference}
               onChange={(e) => setForm({ ...form, reference: e.target.value })}
+              placeholder={form.method === "mpesa" ? "Required for M-Pesa" : ""}
               style={inputStyle(c)}
             />
           </Field>

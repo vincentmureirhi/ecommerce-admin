@@ -115,7 +115,7 @@ function inputStyle(c, isDark) {
 }
 
 function buildProductPricingSummary(meta) {
-  if (!meta || !meta.rule_type) return "Legacy / no explicit pricing rule — uses tier then wholesale then retail.";
+  if (!meta || !meta.rule_type) return "Legacy / no explicit pricing rule - uses tier then wholesale then retail.";
   const type = meta.rule_type;
   const threshold = meta.threshold_qty;
   const group = meta.group_name;
@@ -196,6 +196,9 @@ export default function ProductForm() {
     retail_price: "",
     wholesale_price: "",
     min_qty_wholesale: "10",
+    min_order_qty: "1",
+    order_qty_step: "1",
+    selling_unit_label: "piece",
     cost_price: "",
     reorder_level: "10",
     current_stock: "0",
@@ -268,6 +271,18 @@ export default function ProductForm() {
       return false;
     }
 
+    const minOrderQty = Number(form.min_order_qty);
+    if (!Number.isInteger(minOrderQty) || minOrderQty < 1) {
+      setErr("Minimum order quantity must be at least 1.");
+      return false;
+    }
+
+    const orderQtyStep = Number(form.order_qty_step);
+    if (!Number.isInteger(orderQtyStep) || orderQtyStep < 1) {
+      setErr("Order quantity step must be at least 1.");
+      return false;
+    }
+
     return true;
   }
 
@@ -322,6 +337,9 @@ export default function ProductForm() {
             min_qty_wholesale: String(
               product.min_qty_wholesale ?? product.wholesale_threshold_qty ?? product.min_wholesale_qty ?? 10
             ),
+            min_order_qty: String(product.min_order_qty || 1),
+            order_qty_step: String(product.order_qty_step || 1),
+            selling_unit_label: product.selling_unit_label || "piece",
             cost_price: product.cost_price != null ? String(product.cost_price) : "",
             reorder_level: String(product.reorder_level || 10),
             current_stock: String(product.current_stock || 0),
@@ -488,6 +506,9 @@ export default function ProductForm() {
         retail_price: Number(form.retail_price),
         wholesale_price: form.wholesale_price ? Number(form.wholesale_price) : null,
         min_qty_wholesale: Number(form.min_qty_wholesale) || 10,
+        min_order_qty: Math.max(1, Number(form.min_order_qty) || 1),
+        order_qty_step: Math.max(1, Number(form.order_qty_step) || 1),
+        selling_unit_label: form.selling_unit_label.trim() || "piece",
         cost_price: form.cost_price ? Number(form.cost_price) : null,
         reorder_level: Math.max(0, Number(form.reorder_level) || 10),
         current_stock: Math.max(0, Number(form.current_stock) || 0),
@@ -761,6 +782,50 @@ export default function ProductForm() {
                   style={inputStyle(c, isDark)}
                 />
               </Field>
+
+              <Field
+                label="Minimum order quantity"
+                hint="Smallest quantity customers can add to cart. Example: 12 for razors sold by dozen."
+                c={c}
+              >
+                <input
+                  type="number"
+                  min="1"
+                  value={form.min_order_qty}
+                  onChange={(e) => updateField("min_order_qty", e.target.value)}
+                  placeholder="1"
+                  style={inputStyle(c, isDark)}
+                />
+              </Field>
+
+              <Field
+                label="Order quantity step"
+                hint="Quantity increment after the minimum. Example: 12 allows 12, 24, 36."
+                c={c}
+              >
+                <input
+                  type="number"
+                  min="1"
+                  value={form.order_qty_step}
+                  onChange={(e) => updateField("order_qty_step", e.target.value)}
+                  placeholder="1"
+                  style={inputStyle(c, isDark)}
+                />
+              </Field>
+
+              <Field
+                label="Selling unit label"
+                hint="Shown on storefront, for example piece, dozen, carton, box."
+                c={c}
+              >
+                <input
+                  type="text"
+                  value={form.selling_unit_label}
+                  onChange={(e) => updateField("selling_unit_label", e.target.value)}
+                  placeholder="piece"
+                  style={inputStyle(c, isDark)}
+                />
+              </Field>
             </FormGrid>
           </PageCard>
 
@@ -780,7 +845,7 @@ export default function ProductForm() {
                   onChange={(e) => updateField("pricing_rule_id", e.target.value)}
                   style={inputStyle(c, isDark)}
                 >
-                  <option value="">— No explicit rule (legacy fallback) —</option>
+                  <option value="">No explicit rule (legacy fallback)</option>
                   {pricingRules.map((r) => (
                     <option key={r.id} value={r.id}>
                       {r.name} ({r.rule_type})
@@ -828,7 +893,7 @@ export default function ProductForm() {
 
             {!id && (
               <div style={{ marginTop: 12, fontSize: 12, color: c.muted }}>
-                💡 You can assign a pricing rule after creating the product, or create the product first and assign it later from the Pricing Rules page.
+                Tip: You can assign a pricing rule after creating the product, or create the product first and assign it later from the Pricing Rules page.
               </div>
             )}
           </PageCard>
@@ -907,7 +972,7 @@ export default function ProductForm() {
                     marginBottom: 8,
                   }}
                 >
-                  📷
+                  Upload
                 </div>
                 <div
                   style={{
@@ -1005,7 +1070,7 @@ export default function ProductForm() {
                         }}
                         title="Remove image"
                       >
-                        ×
+                        x
                       </button>
                     </div>
                   ))}

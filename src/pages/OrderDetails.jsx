@@ -26,8 +26,9 @@ export default function OrderDetails() {
   const [savingOrderStatus, setSavingOrderStatus] = useState(false);
 
   const [orderStatus, setOrderStatus] = useState("pending");
-  const [paymentStatus, setPaymentStatus] = useState("pending");
+ const [paymentStatus, setPaymentStatus] = useState("pending");
   const [amountPaid, setAmountPaid] = useState("0");
+  const [paymentReference, setPaymentReference] = useState("");
   const [dueDate, setDueDate] = useState("");
 
   async function load() {
@@ -42,6 +43,7 @@ export default function OrderDetails() {
       setOrderStatus(o?.order_status || "pending");
       setPaymentStatus(o?.payment_status || "pending");
       setAmountPaid(String(o?.amount_paid ?? 0));
+      setPaymentReference("");
       setDueDate(o?.due_date || "");
     } catch (e) {
       setErr(e?.message || "Failed to load order");
@@ -86,6 +88,18 @@ export default function OrderDetails() {
       return;
     }
 
+    const existingAmountPaid = Number(order?.amount_paid || 0);
+    const paymentIncreased = parsedAmountPaid > existingAmountPaid;
+    const markingCompleted =
+      order?.order_type === "normal" &&
+      paymentStatus === "completed" &&
+      (order?.payment_status || "pending") !== "completed";
+
+    if ((paymentIncreased || markingCompleted) && !paymentReference.trim()) {
+      setErr("Enter the M-Pesa receipt/reference code before confirming a manual payment update.");
+      return;
+    }
+
     try {
       setSavingSettlement(true);
 
@@ -104,6 +118,7 @@ export default function OrderDetails() {
       setOrder(updated);
       setPaymentStatus(updated?.payment_status || "pending");
       setAmountPaid(String(updated?.amount_paid ?? 0));
+      setPaymentReference("");
       setDueDate(updated?.due_date || "");
       setErr("");
     } catch (e) {
@@ -447,6 +462,17 @@ export default function OrderDetails() {
                 step="0.01"
                 value={amountPaid}
                 onChange={(e) => setAmountPaid(e.target.value)}
+                style={inputStyle(c)}
+              />
+            </div>
+
+            <div style={{ marginBottom: 12 }}>
+              <div style={label}>M-Pesa Receipt / Reference</div>
+              <input
+                type="text"
+                value={paymentReference}
+                onChange={(e) => setPaymentReference(e.target.value)}
+                placeholder="Required when confirming new money received"
                 style={inputStyle(c)}
               />
             </div>

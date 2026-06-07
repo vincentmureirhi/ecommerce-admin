@@ -13,7 +13,7 @@ const EMPTY_FORM = {
   title: "",
   content: "",
   featured_image_url: "",
-  product_id: "",
+  associated_product_id: "",
   status: "draft",
 };
 
@@ -57,7 +57,6 @@ async function uploadImage(file) {
   const res = await client.post("/uploads", formData, {
     headers: { "Content-Type": "multipart/form-data" },
   });
-  // Backend returns { image_url: "/images/filename.jpg" }
   const imageUrl = res.data?.data?.image_url || res.data?.image_url;
   if (!imageUrl) throw new Error("Upload failed — no image_url returned");
   return imageUrl;
@@ -78,7 +77,6 @@ export default function Blog() {
   const [formLoading, setFormLoading] = useState(false);
   const [formErr, setFormErr] = useState("");
 
-  // Image upload state
   const [imageUploading, setImageUploading] = useState(false);
   const fileInputRef = useRef(null);
   const [deletingId, setDeletingId] = useState(null);
@@ -120,7 +118,7 @@ export default function Blog() {
       title: post.title || "",
       content: post.content || "",
       featured_image_url: post.featured_image_url || "",
-      product_id: post.product_id ? String(post.product_id) : "",
+      associated_product_id: post.associated_product_id ? String(post.associated_product_id) : "",
       status: post.status || "draft",
     });
     setFormMode("edit");
@@ -129,7 +127,6 @@ export default function Blog() {
     setShowForm(true);
   }
 
-  // Handle image file selection — upload immediately and store URL
   async function handleImageFileChange(e) {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -139,8 +136,7 @@ export default function Blog() {
 
     try {
       const url = await uploadImage(file);
-
-      const backendBase = (import.meta.env.VITE_API_URL || "").replace(/\/api$/, "");
+      const backendBase = (import.meta.env.VITE_API_URL || "https://ecommerce-backend-9s3f.onrender.com/api").replace(/\/api$/, "");
       const fullUrl = url.startsWith("http") ? url : `${backendBase}${url}`;
 
       setForm((f) => ({ ...f, featured_image_url: fullUrl }));
@@ -170,9 +166,9 @@ export default function Blog() {
       title: form.title.trim(),
       content: form.content.trim(),
       featured_image_url: form.featured_image_url.trim() || null,
-      product_id: (() => {
-        const parsed = parseInt(form.product_id, 10);
-        return form.product_id && parsed > 0 ? parsed : null;
+      associated_product_id: (() => {
+        const parsed = parseInt(form.associated_product_id, 10);
+        return form.associated_product_id && parsed > 0 ? parsed : null;
       })(),
       status: form.status,
     };
@@ -284,7 +280,7 @@ export default function Blog() {
         </button>
       </div>
 
-      {/* Success */}
+      {/* Success Message */}
       {successMsg && (
         <div
           style={{
@@ -302,7 +298,7 @@ export default function Blog() {
         </div>
       )}
 
-      {/* Error */}
+      {/* Error Message */}
       {err && (
         <div
           style={{
@@ -318,7 +314,7 @@ export default function Blog() {
         </div>
       )}
 
-      {/* Table */}
+      {/* Blog Posts Table */}
       <div
         style={{
           background: c.card,
@@ -406,9 +402,7 @@ export default function Blog() {
                               borderRadius: 5,
                               border: `1px solid ${c.border}`,
                             }}
-                            onError={(e) => {
-                              e.target.style.display = "none";
-                            }}
+                            onError={(e) => (e.target.style.display = "none")}
                           />
                         ) : (
                           <span
@@ -470,7 +464,7 @@ export default function Blog() {
         )}
       </div>
 
-      {/* ─── Create / Edit Modal ─── */}
+      {/* Create / Edit Modal */}
       {showForm && (
         <ModalOverlay onClose={() => setShowForm(false)}>
           <div
@@ -527,7 +521,6 @@ export default function Blog() {
             )}
 
             <form onSubmit={handleFormSubmit}>
-              {/* Title */}
               <div style={{ marginBottom: 14 }}>
                 <label style={labelStyle}>Title *</label>
                 <input
@@ -539,7 +532,6 @@ export default function Blog() {
                 />
               </div>
 
-              {/* Content */}
               <div style={{ marginBottom: 14 }}>
                 <label style={labelStyle}>Content *</label>
                 <textarea
@@ -552,7 +544,7 @@ export default function Blog() {
                 />
               </div>
 
-              {/* Image Upload */}
+              {/* Featured Image */}
               <div style={{ marginBottom: 14 }}>
                 <label style={labelStyle}>Featured Image</label>
                 <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8 }}>
@@ -606,7 +598,7 @@ export default function Blog() {
                         borderRadius: 8,
                         border: `1px solid ${c.border}`,
                       }}
-                      onError={(e) => { e.target.style.display = "none"; }}
+                      onError={(e) => (e.target.style.display = "none")}
                     />
                     <button
                       type="button"
@@ -630,7 +622,7 @@ export default function Blog() {
                 )}
               </div>
 
-              {/* Product ID + Status */}
+              {/* Associated Product ID + Status */}
               <div
                 style={{
                   display: "grid",
@@ -645,8 +637,8 @@ export default function Blog() {
                     type="number"
                     min="1"
                     step="1"
-                    value={form.product_id}
-                    onChange={(e) => setForm((f) => ({ ...f, product_id: e.target.value }))}
+                    value={form.associated_product_id}
+                    onChange={(e) => setForm((f) => ({ ...f, associated_product_id: e.target.value }))}
                     placeholder="Optional product ID"
                     style={inputStyle}
                   />
@@ -664,7 +656,6 @@ export default function Blog() {
                 </div>
               </div>
 
-              {/* Actions */}
               <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
                 <button
                   type="button"
@@ -709,7 +700,7 @@ export default function Blog() {
         </ModalOverlay>
       )}
 
-      {/* Delete Confirmation */}
+      {/* Delete Confirmation Modal */}
       {deletingId && (
         <ModalOverlay onClose={() => setDeletingId(null)}>
           <div
