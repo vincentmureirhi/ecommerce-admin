@@ -26,7 +26,7 @@ export default function OrderDetails() {
   const [savingOrderStatus, setSavingOrderStatus] = useState(false);
 
   const [orderStatus, setOrderStatus] = useState("pending");
- const [paymentStatus, setPaymentStatus] = useState("pending");
+  const [paymentStatus, setPaymentStatus] = useState("pending");
   const [amountPaid, setAmountPaid] = useState("0");
   const [paymentReference, setPaymentReference] = useState("");
   const [dueDate, setDueDate] = useState("");
@@ -106,6 +106,7 @@ export default function OrderDetails() {
       const payload = {
         amount_paid: parsedAmountPaid,
         due_date: order?.order_type === "route" ? dueDate : null,
+        payment_reference: paymentReference.trim() || null,
       };
 
       if (order?.order_type === "normal") {
