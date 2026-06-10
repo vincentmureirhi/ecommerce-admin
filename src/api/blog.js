@@ -2,8 +2,11 @@ import client from "./client";
 
 export async function listBlogPosts(filters = {}) {
   const params = new URLSearchParams();
+  if (filters.all) params.append("all", filters.all);
   if (filters.status) params.append("status", filters.status);
   if (filters.search) params.append("search", filters.search);
+  if (filters.limit) params.append("limit", filters.limit);
+  if (filters.offset) params.append("offset", filters.offset);
   const queryStr = params.toString();
   const res = await client.get(`/blog${queryStr ? "?" + queryStr : ""}`);
   return res.data;

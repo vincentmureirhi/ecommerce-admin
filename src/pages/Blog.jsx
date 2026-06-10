@@ -91,8 +91,14 @@ export default function Blog() {
     try {
       setLoading(true);
       setErr("");
-      const res = await listBlogPosts({ all: "true" });
-      const rows = Array.isArray(res?.data) ? res.data : Array.isArray(res) ? res : [];
+      const res = await listBlogPosts({ all: "true", limit: 200 });
+      const rows = Array.isArray(res?.data?.posts)
+        ? res.data.posts
+        : Array.isArray(res?.data)
+        ? res.data
+        : Array.isArray(res)
+        ? res
+        : [];
       setPosts(rows);
     } catch (e) {
       setErr(e?.message || "Failed to load blog posts");
@@ -341,7 +347,7 @@ export default function Blog() {
                   <th style={thStyle}>Status</th>
                   <th style={thStyle}>Image</th>
                   <th style={thStyle}>Date</th>
-                  <th style={{ ...thStyle, textAlign: "center" }}>Actions</th>
+                  <th style={{ ...thStyle, ...stickyActionCell(c), textAlign: "center" }}>Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -421,7 +427,7 @@ export default function Blog() {
                       <td style={{ ...tdStyle, color: c.textMuted, whiteSpace: "nowrap" }}>
                         {post.created_at ? new Date(post.created_at).toLocaleDateString() : "—"}
                       </td>
-                      <td style={{ ...tdStyle, textAlign: "center" }}>
+                      <td style={{ ...tdStyle, ...stickyActionCell(c), textAlign: "center" }}>
                         <div style={{ display: "flex", gap: 6, justifyContent: "center" }}>
                           <button
                             onClick={() => openEdit(post)}
@@ -756,4 +762,14 @@ export default function Blog() {
       )}
     </div>
   );
+}
+
+function stickyActionCell(c) {
+  return {
+    position: "sticky",
+    right: 0,
+    zIndex: 2,
+    background: c.card,
+    boxShadow: "-8px 0 12px rgba(15, 23, 42, 0.08)",
+  };
 }

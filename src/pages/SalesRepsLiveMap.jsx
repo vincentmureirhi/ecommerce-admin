@@ -57,6 +57,16 @@ function getFreshness(recordedAt) {
   return { label: "Offline", tone: "danger" };
 }
 
+function getAccuracyMeta(value) {
+  const accuracy = Number(value);
+  if (!Number.isFinite(accuracy)) {
+    return { label: "No accuracy", tone: "neutral" };
+  }
+  if (accuracy <= 50) return { label: `High accuracy (${Math.round(accuracy)}m)`, tone: "success" };
+  if (accuracy <= 150) return { label: `Usable accuracy (${Math.round(accuracy)}m)`, tone: "warning" };
+  return { label: `Wide radius (${Math.round(accuracy)}m)`, tone: "danger" };
+}
+
 function getBadgeStyles(tone, isDark) {
   if (tone === "success") {
     return {
@@ -122,7 +132,7 @@ export default function SalesRepsLiveMap() {
 
   useEffect(() => {
     loadData();
-    const timer = setInterval(loadData, 30000);
+    const timer = setInterval(loadData, 10000);
     return () => clearInterval(timer);
   }, []);
 
@@ -291,7 +301,9 @@ export default function SalesRepsLiveMap() {
             ) : (
               rows.map((rep) => {
                 const freshness = getFreshness(rep.recorded_at);
+                const accuracyMeta = getAccuracyMeta(rep.accuracy_meters);
                 const badge = getBadgeStyles(freshness.tone, isDark);
+                const accuracyBadge = getBadgeStyles(accuracyMeta.tone, isDark);
                 const isSelected = rep.sales_rep_id === selectedRepId;
 
                 return (
@@ -337,6 +349,20 @@ export default function SalesRepsLiveMap() {
 
                     <div style={{ fontSize: 12, color: c.textMuted, marginBottom: 8 }}>
                       Last updated: {formatDateTime(rep.recorded_at)}
+                    </div>
+
+                    <div style={{ marginBottom: 8 }}>
+                      <span
+                        style={{
+                          ...accuracyBadge,
+                          padding: "4px 8px",
+                          borderRadius: 999,
+                          fontSize: 11,
+                          fontWeight: 700,
+                        }}
+                      >
+                        {accuracyMeta.label}
+                      </span>
                     </div>
 
                     <div style={{ fontSize: 12, color: c.textMuted, marginBottom: 10 }}>
@@ -422,6 +448,9 @@ export default function SalesRepsLiveMap() {
                   </div>
                   <div style={{ fontSize: 12, color: c.textMuted, marginTop: 4 }}>
                     Last updated: {formatDateTime(selectedRep.recorded_at)}
+                  </div>
+                  <div style={{ fontSize: 12, color: c.textMuted, marginTop: 4 }}>
+                    Accuracy: {getAccuracyMeta(selectedRep.accuracy_meters).label} | Source: {selectedRep.source || "web"}
                   </div>
                 </div>
 
