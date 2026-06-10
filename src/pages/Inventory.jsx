@@ -208,6 +208,79 @@ function formatDate(value) {
   });
 }
 
+function formatDateTime(value) {
+  if (!value) return "Not refreshed yet";
+  return new Date(value).toLocaleString("en-US", {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function toNumber(value, fallback = 0) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function getCoverageDays(product) {
+  const stock = toNumber(product.current_stock);
+  const sold30 = toNumber(product.units_sold_30d);
+  if (stock <= 0) return 0;
+  if (sold30 <= 0) return null;
+  return Math.round(stock / (sold30 / 30));
+}
+
+function downloadInventoryCSV(rows) {
+  const headers = [
+    "Product",
+    "SKU",
+    "Category",
+    "Supplier",
+    "Stock",
+    "Reorder Level",
+    "Stock Status",
+    "Movement",
+    "Stock Value",
+    "Potential Profit",
+    "Sold 7 Days",
+    "Sold 30 Days",
+    "Last Sold",
+    "Last Customer",
+    "Last Region",
+  ];
+
+  const csvRows = rows.map((row) => [
+    row.product_name,
+    row.sku,
+    row.category_name,
+    row.supplier_name,
+    row.current_stock,
+    row.reorder_level,
+    row.stock_status,
+    row.movement_status,
+    row.stock_value,
+    row.potential_profit,
+    row.units_sold_7d,
+    row.units_sold_30d,
+    row.last_sale_date || "",
+    row.last_customer_name || "",
+    row.last_sale_region || "",
+  ]);
+
+  const csv = [headers, ...csvRows]
+    .map((row) => row.map((value) => `"${String(value ?? "").replace(/"/g, '""')}"`).join(","))
+    .join("\n");
+
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `inventory-command-${new Date().toISOString().slice(0, 10)}.csv`;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
 function getDaysSinceBadge(days, isDark) {
   if (days === null || days === undefined) {
     return {
@@ -345,6 +418,103 @@ function getChannelBadge(channel, isDark) {
   };
 }
 
+function LivePill({ label, color }) {
+  return (
+    <span
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        padding: "5px 9px",
+        borderRadius: 999,
+        background: `${color}18`,
+        color,
+        border: `1px solid ${color}40`,
+        fontSize: 11,
+        fontWeight: 800,
+      }}
+    >
+      {label}
+    </span>
+  );
+}
+
+function OperationCard({ title, value, subtitle, color, active, c, onClick }) {
+  const interactive = typeof onClick === "function";
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={!interactive}
+      style={{
+        background: active ? `${color}12` : c.card,
+        border: `1px solid ${active ? color : c.border}`,
+        borderLeft: `4px solid ${color}`,
+        borderRadius: 12,
+        padding: 16,
+        cursor: interactive ? "pointer" : "default",
+        textAlign: "left",
+        boxShadow: "0 1px 3px rgba(0,0,0,0.05)",
+      }}
+    >
+      <div style={{ color: c.textMuted, fontSize: 12, fontWeight: 800, marginBottom: 8 }}>
+        {title}
+      </div>
+      <div style={{ color: c.text, fontSize: 24, fontWeight: 900, lineHeight: 1.15, wordBreak: "break-word" }}>
+        {value}
+      </div>
+      <div style={{ color: c.textMuted, fontSize: 12, marginTop: 8, lineHeight: 1.4 }}>
+        {subtitle}
+      </div>
+    </button>
+  );
+}
+
+function ActionQueueItem({ item, label, note, color, c, onClick }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      style={{
+        background: c.bg,
+        border: `1px solid ${c.border}`,
+        borderLeft: `4px solid ${color}`,
+        borderRadius: 10,
+        padding: 14,
+        textAlign: "left",
+        cursor: "pointer",
+      }}
+    >
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start" }}>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ color: c.text, fontSize: 13, fontWeight: 800, lineHeight: 1.35, wordBreak: "break-word" }}>
+            {item.product_name}
+          </div>
+          <div style={{ color: c.textMuted, fontSize: 12, marginTop: 4, lineHeight: 1.35 }}>
+            {item.sku || "No SKU"} | {item.supplier_name || "No supplier"}
+          </div>
+        </div>
+        <span
+          style={{
+            flexShrink: 0,
+            background: `${color}18`,
+            color,
+            borderRadius: 999,
+            padding: "4px 8px",
+            fontSize: 11,
+            fontWeight: 800,
+          }}
+        >
+          {label}
+        </span>
+      </div>
+      <div style={{ color: c.textMuted, fontSize: 12, marginTop: 10, lineHeight: 1.4 }}>
+        {note}
+      </div>
+    </button>
+  );
+}
+
 export default function Inventory() {
   const { isDark } = useTheme();
   const c = getThemeColors(isDark);
@@ -358,6 +528,10 @@ export default function Inventory() {
 
   const [err, setErr] = useState("");
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [autoRefresh, setAutoRefresh] = useState(true);
+  const [lastUpdated, setLastUpdated] = useState(null);
+  const [actionFilter, setActionFilter] = useState("");
 
   const [search, setSearch] = useState("");
   const [stockFilter, setStockFilter] = useState("");
@@ -372,9 +546,15 @@ export default function Inventory() {
   const [saveErr, setSaveErr] = useState("");
   const [saveSuccess, setSaveSuccess] = useState("");
 
-  async function load() {
+  async function load(options = {}) {
+    const silent = Boolean(options.silent);
+
     setErr("");
-    setLoading(true);
+    if (silent) {
+      setRefreshing(true);
+    } else {
+      setLoading(true);
+    }
 
     try {
       const res = await getInventoryAnalytics({ profit_type: "retail" });
@@ -386,16 +566,31 @@ export default function Inventory() {
       setSlowMoving(Array.isArray(data.slow_moving) ? data.slow_moving : []);
       setCategories(Array.isArray(data.categories) ? data.categories : []);
       setSuppliers(Array.isArray(data.suppliers) ? data.suppliers : []);
+      setLastUpdated(new Date());
     } catch (e) {
       setErr(e?.message || "Failed to load inventory");
     } finally {
-      setLoading(false);
+      if (silent) {
+        setRefreshing(false);
+      } else {
+        setLoading(false);
+      }
     }
   }
 
   useEffect(() => {
     load();
   }, []);
+
+  useEffect(() => {
+    if (!autoRefresh) return undefined;
+
+    const timer = setInterval(() => {
+      load({ silent: true });
+    }, 60000);
+
+    return () => clearInterval(timer);
+  }, [autoRefresh]);
 
   useEffect(() => {
     if (selectedProduct) {
@@ -419,6 +614,17 @@ export default function Inventory() {
       const matchesCategory = !categoryFilter || String(p.category_id) === categoryFilter;
       const matchesSupplier = !supplierFilter || String(p.supplier_id) === supplierFilter;
       const matchesChannel = !channelFilter || (p.last_sale_channel || "unknown") === channelFilter;
+      const coverageDays = getCoverageDays(p);
+      const matchesAction =
+        !actionFilter ||
+        (actionFilter === "reorder" &&
+          ["out_of_stock", "reorder_now", "low_stock"].includes(p.stock_status)) ||
+        (actionFilter === "hot_risk" &&
+          p.movement_status === "fast_moving" &&
+          (p.stock_status !== "healthy" || coverageDays !== null && coverageDays <= 14)) ||
+        (actionFilter === "dead_cash" && p.movement_status === "dead_stock") ||
+        (actionFilter === "margin_risk" && toNumber(p.potential_profit) < 0) ||
+        (actionFilter === "setup_gap" && toNumber(p.current_stock) <= 10 && toNumber(p.reorder_level) <= 0);
 
       return (
         matchesSearch &&
@@ -426,10 +632,51 @@ export default function Inventory() {
         matchesMovement &&
         matchesCategory &&
         matchesSupplier &&
-        matchesChannel
+        matchesChannel &&
+        matchesAction
       );
     });
-  }, [rows, search, stockFilter, movementFilter, categoryFilter, supplierFilter, channelFilter]);
+  }, [rows, search, stockFilter, movementFilter, categoryFilter, supplierFilter, channelFilter, actionFilter]);
+
+  const operations = useMemo(() => {
+    const reorderQueue = rows
+      .filter((p) => ["out_of_stock", "reorder_now", "low_stock"].includes(p.stock_status))
+      .sort((a, b) => {
+        const priority = { out_of_stock: 0, reorder_now: 1, low_stock: 2 };
+        const pa = priority[a.stock_status] ?? 9;
+        const pb = priority[b.stock_status] ?? 9;
+        if (pa !== pb) return pa - pb;
+        return toNumber(b.units_sold_30d) - toNumber(a.units_sold_30d);
+      });
+
+    const hotRisk = rows.filter((p) => {
+      const coverageDays = getCoverageDays(p);
+      return (
+        p.movement_status === "fast_moving" &&
+        (p.stock_status !== "healthy" || (coverageDays !== null && coverageDays <= 14))
+      );
+    });
+
+    const deadCash = rows.filter((p) => p.movement_status === "dead_stock");
+    const marginRisk = rows.filter((p) => toNumber(p.potential_profit) < 0);
+    const setupGap = rows.filter((p) => toNumber(p.current_stock) <= 10 && toNumber(p.reorder_level) <= 0);
+    const salesVelocityDaily = toNumber(summary.total_units_sold_30d) / 30;
+    const coverDays =
+      salesVelocityDaily > 0
+        ? Math.round(toNumber(summary.total_units_in_stock) / salesVelocityDaily)
+        : null;
+    const deadStockValue = deadCash.reduce((sum, p) => sum + toNumber(p.stock_value), 0);
+
+    return {
+      reorderQueue,
+      hotRisk,
+      deadCash,
+      marginRisk,
+      setupGap,
+      coverDays,
+      deadStockValue,
+    };
+  }, [rows, summary]);
 
   const clearFilters = () => {
     setSearch("");
@@ -438,6 +685,7 @@ export default function Inventory() {
     setCategoryFilter("");
     setSupplierFilter("");
     setChannelFilter("");
+    setActionFilter("");
   };
 
   async function handleSaveReorderLevel() {
@@ -525,7 +773,7 @@ export default function Inventory() {
                 lineHeight: 1.15,
               }}
             >
-              📦 Inventory Command Center
+              Inventory Command Center
             </h1>
             <p
               style={{
@@ -535,26 +783,70 @@ export default function Inventory() {
                 lineHeight: 1.5,
               }}
             >
-              Serious stock intelligence, product movement, last-sale visibility, and business-grade inventory control.
+              Live reorder pressure, stock cover, movement risk, supplier exposure, and warehouse action queue.
+              {lastUpdated ? ` Updated ${formatDateTime(lastUpdated)}.` : ""}
             </p>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 10 }}>
+              <LivePill label={autoRefresh ? "Auto refresh on" : "Auto refresh off"} color={autoRefresh ? "#0f766e" : "#64748b"} />
+              <LivePill label={refreshing ? "Syncing inventory" : "Inventory synced"} color={refreshing ? "#f59e0b" : "#10b981"} />
+              <LivePill label={`${filtered.length} visible SKUs`} color="#667eea" />
+            </div>
           </div>
 
-          <button
-            onClick={load}
-            style={{
-              padding: "10px 16px",
-              border: "none",
-              borderRadius: 8,
-              cursor: "pointer",
-              background: "#0ea5e9",
-              color: "white",
-              fontWeight: 700,
-              fontSize: 13,
-              flexShrink: 0,
-            }}
-          >
-            Refresh
-          </button>
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", justifyContent: "flex-end" }}>
+            <button
+              type="button"
+              onClick={() => setAutoRefresh((value) => !value)}
+              style={{
+                padding: "10px 16px",
+                border: autoRefresh ? "none" : `1px solid ${c.border}`,
+                borderRadius: 8,
+                cursor: "pointer",
+                background: autoRefresh ? "#0f766e" : c.card,
+                color: autoRefresh ? "white" : c.text,
+                fontWeight: 700,
+                fontSize: 13,
+                flexShrink: 0,
+              }}
+            >
+              {autoRefresh ? "Live On" : "Live Off"}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => downloadInventoryCSV(filtered)}
+              style={{
+                padding: "10px 16px",
+                border: `1px solid ${c.border}`,
+                borderRadius: 8,
+                cursor: "pointer",
+                background: c.card,
+                color: c.text,
+                fontWeight: 700,
+                fontSize: 13,
+                flexShrink: 0,
+              }}
+            >
+              Export CSV
+            </button>
+
+            <button
+              onClick={() => load({ silent: true })}
+              style={{
+                padding: "10px 16px",
+                border: "none",
+                borderRadius: 8,
+                cursor: "pointer",
+                background: "#0ea5e9",
+                color: "white",
+                fontWeight: 700,
+                fontSize: 13,
+                flexShrink: 0,
+              }}
+            >
+              Refresh
+            </button>
+          </div>
         </div>
 
         {err && (
@@ -589,6 +881,123 @@ export default function Inventory() {
           <SummaryCard title="Out of Stock" value={summary.out_of_stock_count || 0} subtitle="Immediate action" c={c} />
           <SummaryCard title="Dead Stock" value={summary.dead_stock_count || 0} subtitle="Sleeping cash" c={c} />
         </div>
+
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))",
+            gap: 14,
+            marginBottom: 20,
+          }}
+        >
+          <OperationCard
+            title="Reorder Queue"
+            value={operations.reorderQueue.length}
+            subtitle="SKUs needing buying action"
+            color="#f59e0b"
+            active={actionFilter === "reorder"}
+            c={c}
+            onClick={() => setActionFilter(actionFilter === "reorder" ? "" : "reorder")}
+          />
+          <OperationCard
+            title="Stock Cover"
+            value={operations.coverDays === null ? "No sales" : `${operations.coverDays} days`}
+            subtitle="Based on 30-day movement"
+            color="#3b82f6"
+            active={false}
+            c={c}
+          />
+          <OperationCard
+            title="Hot SKU Risk"
+            value={operations.hotRisk.length}
+            subtitle="Fast movers close to shortage"
+            color="#ef4444"
+            active={actionFilter === "hot_risk"}
+            c={c}
+            onClick={() => setActionFilter(actionFilter === "hot_risk" ? "" : "hot_risk")}
+          />
+          <OperationCard
+            title="Dead Stock Cash"
+            value={formatCurrency(operations.deadStockValue)}
+            subtitle={`${operations.deadCash.length} SKUs not moving`}
+            color="#8b5cf6"
+            active={actionFilter === "dead_cash"}
+            c={c}
+            onClick={() => setActionFilter(actionFilter === "dead_cash" ? "" : "dead_cash")}
+          />
+          <OperationCard
+            title="Margin Risk"
+            value={operations.marginRisk.length}
+            subtitle="Potential profit below zero"
+            color="#b91c1c"
+            active={actionFilter === "margin_risk"}
+            c={c}
+            onClick={() => setActionFilter(actionFilter === "margin_risk" ? "" : "margin_risk")}
+          />
+          <OperationCard
+            title="Setup Gaps"
+            value={operations.setupGap.length}
+            subtitle="Low stock with no reorder level"
+            color="#64748b"
+            active={actionFilter === "setup_gap"}
+            c={c}
+            onClick={() => setActionFilter(actionFilter === "setup_gap" ? "" : "setup_gap")}
+          />
+        </div>
+
+        <SectionCard
+          title="Warehouse Action Queue"
+          rightAction={
+            actionFilter ? (
+              <button
+                type="button"
+                onClick={() => setActionFilter("")}
+                style={{
+                  padding: "8px 12px",
+                  border: `1px solid ${c.border}`,
+                  borderRadius: 8,
+                  cursor: "pointer",
+                  background: c.card,
+                  color: c.text,
+                  fontSize: 12,
+                  fontWeight: 700,
+                }}
+              >
+                Show all inventory
+              </button>
+            ) : null
+          }
+          c={c}
+        >
+          {operations.reorderQueue.length === 0 && operations.hotRisk.length === 0 ? (
+            <div style={{ color: c.textMuted, fontSize: 13 }}>No urgent warehouse actions right now.</div>
+          ) : (
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 12 }}>
+              {operations.reorderQueue.slice(0, 6).map((item) => (
+                <ActionQueueItem
+                  key={`reorder-${item.id}`}
+                  item={item}
+                  label={item.stock_status === "out_of_stock" ? "Stockout" : "Reorder"}
+                  note={`Stock ${item.current_stock} | reorder ${item.reorder_level} | 30d sold ${item.units_sold_30d}`}
+                  color={item.stock_status === "out_of_stock" ? "#ef4444" : "#f59e0b"}
+                  c={c}
+                  onClick={() => setSelectedProduct(item)}
+                />
+              ))}
+              {operations.hotRisk.slice(0, 4).map((item) => (
+                <ActionQueueItem
+                  key={`hot-${item.id}`}
+                  item={item}
+                  label="Hot SKU risk"
+                  note={`Approx cover: ${getCoverageDays(item) ?? "unknown"} days | 7d sold ${item.units_sold_7d}`}
+                  color="#3b82f6"
+                  c={c}
+                  onClick={() => setSelectedProduct(item)}
+                />
+              ))}
+            </div>
+          )}
+        </SectionCard>
 
         <SectionCard
           title="Filters"

@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { io } from "socket.io-client";
 import { useTheme } from "../context/ThemeContext";
 import {
   listPayments,
@@ -7,6 +8,12 @@ import {
   reconcilePayment,
   createPayment,
 } from "../api/payments";
+
+const API_BASE_URL =
+  import.meta.env.VITE_API_URL ||
+  "https://ecommerce-backend-9s3f.onrender.com/api";
+
+const SOCKET_URL = API_BASE_URL.replace(/\/api\/?$/, "");
 
 function money(value) {
   return `KSh ${parseFloat(value || 0).toLocaleString("en-US", {
@@ -699,6 +706,26 @@ function inputStyle(c) {
   };
 }
 
+function StatusPill({ label, color }) {
+  return (
+    <span
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        padding: "5px 9px",
+        borderRadius: 999,
+        background: `${color}18`,
+        color,
+        border: `1px solid ${color}40`,
+        fontSize: 11,
+        fontWeight: 800,
+      }}
+    >
+      {label}
+    </span>
+  );
+}
+
 export default function Payments() {
   const { isDark } = useTheme();
 
@@ -715,6 +742,10 @@ export default function Payments() {
   const [selectedPayment, setSelectedPayment] = useState(null);
   const [showManualModal, setShowManualModal] = useState(false);
   const [err, setErr] = useState("");
+  const [lastUpdated, setLastUpdated] = useState(null);
+  const [autoRefresh, setAutoRefresh] = useState(true);
+  const [socketConnected, setSocketConnected] = useState(false);
+  const [liveEvents, setLiveEvents] = useState(0);
 
   const [filters, setFilters] = useState({
     search: "",
@@ -725,9 +756,11 @@ export default function Payments() {
     dateRange: "7days",
   });
 
-  async function loadPayments() {
+  async function loadPayments(options = {}) {
+    const silent = Boolean(options.silent);
+
     try {
-      setLoading(true);
+      if (!silent) setLoading(true);
       setErr("");
 
       const [paymentsRes, summaryRes] = await Promise.all([
@@ -737,15 +770,59 @@ export default function Payments() {
 
       setAllPayments(Array.isArray(paymentsRes?.data) ? paymentsRes.data : []);
       setSummary(summaryRes?.data || null);
+      setLastUpdated(new Date());
     } catch (e) {
       setErr(e?.message || "Failed to load payments");
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }
 
   useEffect(() => {
     loadPayments();
+  }, []);
+
+  useEffect(() => {
+    if (!autoRefresh) return undefined;
+
+    const timer = setInterval(() => {
+      loadPayments({ silent: true });
+    }, 30000);
+
+    return () => clearInterval(timer);
+  }, [autoRefresh]);
+
+  useEffect(() => {
+    const socket = io(SOCKET_URL, {
+      transports: ["websocket", "polling"],
+      reconnection: true,
+      reconnectionDelay: 1000,
+      reconnectionDelayMax: 5000,
+    });
+
+    socket.on("connect", () => {
+      setSocketConnected(true);
+      socket.emit("subscribe:payments");
+      socket.emit("subscribe:alerts");
+    });
+
+    socket.on("disconnect", () => {
+      setSocketConnected(false);
+    });
+
+    const reloadFromLiveEvent = () => {
+      setLiveEvents((count) => count + 1);
+      loadPayments({ silent: true });
+    };
+
+    socket.on("payment:completed", reloadFromLiveEvent);
+    socket.on("payment:failed", reloadFromLiveEvent);
+    socket.on("payment:pending", reloadFromLiveEvent);
+    socket.on("payment:updated", reloadFromLiveEvent);
+
+    return () => {
+      socket.disconnect();
+    };
   }, []);
 
   const filteredPayments = useMemo(() => {
@@ -790,13 +867,57 @@ export default function Payments() {
     <div style={{ background: c.bg, minHeight: "100vh", padding: "20px" }}>
       <div style={{ marginBottom: 30, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
         <div>
-          <h1 style={{ margin: "0 0 5px 0", fontSize: "28px", fontWeight: 800, color: c.text }}>💳 Payments</h1>
+          <h1 style={{ margin: "0 0 5px 0", fontSize: "28px", fontWeight: 800, color: c.text }}>Payment Control Desk</h1>
           <p style={{ margin: 0, color: c.muted, fontSize: "14px" }}>
             Automatic M-Pesa tracking for normal customers, manual reconciliation for failures, and route settlement control
+            {lastUpdated ? ` | Updated ${lastUpdated.toLocaleTimeString()}` : ""}
           </p>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 10 }}>
+            <StatusPill
+              label={socketConnected ? "Socket live" : "Socket reconnecting"}
+              color={socketConnected ? "#10b981" : "#f59e0b"}
+            />
+            <StatusPill
+              label={autoRefresh ? "Auto refresh on" : "Auto refresh off"}
+              color={autoRefresh ? "#3b82f6" : "#64748b"}
+            />
+            <StatusPill label={`${liveEvents} live updates`} color="#667eea" />
+          </div>
         </div>
 
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+          <button
+            onClick={() => setAutoRefresh((value) => !value)}
+            style={{
+              padding: "10px 16px",
+              background: autoRefresh ? "#0f766e" : c.card,
+              color: autoRefresh ? "white" : c.text,
+              border: autoRefresh ? "none" : `1px solid ${c.border}`,
+              borderRadius: 8,
+              cursor: "pointer",
+              fontWeight: 700,
+              fontSize: 13,
+            }}
+          >
+            {autoRefresh ? "Live On" : "Live Off"}
+          </button>
+
+          <button
+            onClick={() => loadPayments({ silent: true })}
+            style={{
+              padding: "10px 16px",
+              background: c.card,
+              color: c.text,
+              border: `1px solid ${c.border}`,
+              borderRadius: 8,
+              cursor: "pointer",
+              fontWeight: 700,
+              fontSize: 13,
+            }}
+          >
+            Refresh
+          </button>
+
           <button
             onClick={() => setShowManualModal(true)}
             style={{
@@ -826,7 +947,7 @@ export default function Payments() {
               fontSize: 13,
             }}
           >
-            📥 Export CSV
+            Export CSV
           </button>
         </div>
       </div>
@@ -873,7 +994,7 @@ export default function Payments() {
           marginBottom: 20,
         }}
       >
-        <div style={{ display: "grid", gridTemplateColumns: "2fr repeat(5, 1fr)", gap: 12 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: 12 }}>
           <input
             type="text"
             placeholder="Search order, customer, phone, receipt, reference..."

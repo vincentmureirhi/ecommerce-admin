@@ -1,8 +1,15 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { io } from 'socket.io-client';
 import { useNavigate } from 'react-router-dom';
 import { useTheme } from '../context/ThemeContext';
 import { getThemeColors } from '../utils/themeColors';
 import { dashboardService } from '../services/dashboardService';
+
+const API_BASE_URL =
+  import.meta.env.VITE_API_URL ||
+  'https://ecommerce-backend-9s3f.onrender.com/api';
+
+const SOCKET_URL = API_BASE_URL.replace(/\/api\/?$/, '');
 
 export default function Dashboard() {
   const { isDark } = useTheme();
@@ -15,6 +22,9 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [lastUpdate, setLastUpdate] = useState(null);
+  const [autoRefresh, setAutoRefresh] = useState(true);
+  const [socketConnected, setSocketConnected] = useState(false);
+  const [liveEvents, setLiveEvents] = useState(0);
 
   // Data States
   const [kpis, setKpis] = useState(null);
@@ -32,12 +42,15 @@ export default function Dashboard() {
   const [morningSummary, setMorningSummary] = useState(null);
 
   const loadAttemptRef = useRef(0);
+  const socketRef = useRef(null);
   const maxRetries = 3;
 
   // Load Dashboard Data with retry logic
-  const loadDashboardData = useCallback(async () => {
+  const loadDashboardData = useCallback(async (options = {}) => {
+    const silent = Boolean(options.silent);
+
     try {
-      setLoading(true);
+      if (!silent) setLoading(true);
       setError(null);
 
       // Use filter or custom date range
@@ -109,13 +122,59 @@ export default function Dashboard() {
         setError(err?.message || 'Failed to load dashboard. Please refresh the page.');
       }
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, [filter, customDateRange]);
 
   useEffect(() => {
     loadDashboardData();
-  }, [filter, customDateRange, loadDashboardData]);
+  }, [loadDashboardData]);
+
+  useEffect(() => {
+    if (!autoRefresh) return undefined;
+
+    const timer = setInterval(() => {
+      loadDashboardData({ silent: true });
+    }, 60000);
+
+    return () => clearInterval(timer);
+  }, [autoRefresh, loadDashboardData]);
+
+  useEffect(() => {
+    const socket = io(SOCKET_URL, {
+      transports: ['websocket', 'polling'],
+      reconnection: true,
+      reconnectionDelay: 1000,
+      reconnectionDelayMax: 5000,
+    });
+
+    socketRef.current = socket;
+
+    socket.on('connect', () => {
+      setSocketConnected(true);
+      socket.emit('subscribe:payments');
+      socket.emit('subscribe:alerts');
+    });
+
+    socket.on('disconnect', () => {
+      setSocketConnected(false);
+    });
+
+    const reloadFromLiveEvent = () => {
+      setLiveEvents((count) => count + 1);
+      loadDashboardData({ silent: true });
+    };
+
+    socket.on('payment:completed', reloadFromLiveEvent);
+    socket.on('payment:failed', reloadFromLiveEvent);
+    socket.on('payment:pending', reloadFromLiveEvent);
+    socket.on('payment:updated', reloadFromLiveEvent);
+    socket.on('alert:new', reloadFromLiveEvent);
+
+    return () => {
+      socket.disconnect();
+    };
+  }, [loadDashboardData]);
 
   // Get alert color
   const getAlertColor = (severity) => {
@@ -181,12 +240,23 @@ export default function Dashboard() {
       }}>
         <div>
           <h1 style={{ margin: '0 0 5px 0', fontSize: '28px', fontWeight: 700, color: c.text }}>
-            📊 Dashboard
+            Distribution Command Center
           </h1>
           <p style={{ margin: 0, fontSize: '14px', color: c.textMuted }}>
-            Real-time business intelligence & alerts
-            {lastUpdate && ` • Updated ${lastUpdate.toLocaleTimeString()}`}
+            Live sales, stock, payment, dispatch, and route operation intelligence
+            {lastUpdate && ` | Updated ${lastUpdate.toLocaleTimeString()}`}
           </p>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 10 }}>
+            <LiveBadge
+              label={socketConnected ? 'Socket live' : 'Socket reconnecting'}
+              color={socketConnected ? '#10b981' : '#f59e0b'}
+            />
+            <LiveBadge
+              label={autoRefresh ? 'Auto refresh on' : 'Auto refresh off'}
+              color={autoRefresh ? '#3b82f6' : '#64748b'}
+            />
+            <LiveBadge label={`${liveEvents} live updates`} color="#667eea" />
+          </div>
         </div>
 
         {/* TIME FILTERS */}
@@ -220,13 +290,29 @@ export default function Dashboard() {
                 }
               }}
             >
-              {f === 'today' && '📅 Today'}
-              {f === 'yesterday' && '📅 Yesterday'}
-              {f === '7days' && '📅 7D'}
-              {f === '30days' && '📅 30D'}
-              {f === 'thismonth' && '📅 Month'}
+              {f === 'today' && 'Today'}
+              {f === 'yesterday' && 'Yesterday'}
+              {f === '7days' && '7D'}
+              {f === '30days' && '30D'}
+              {f === 'thismonth' && 'Month'}
             </button>
           ))}
+
+          <button
+            onClick={() => setAutoRefresh((value) => !value)}
+            style={{
+              padding: '8px 14px',
+              background: autoRefresh ? '#0f766e' : isDark ? '#334155' : '#f3f4f6',
+              color: autoRefresh ? 'white' : c.text,
+              border: 'none',
+              borderRadius: '6px',
+              cursor: 'pointer',
+              fontWeight: 600,
+              fontSize: '12px',
+            }}
+          >
+            {autoRefresh ? 'Live On' : 'Live Off'}
+          </button>
 
           {/* REFRESH BUTTON */}
           <button
@@ -252,7 +338,7 @@ export default function Dashboard() {
               e.target.style.background = '#667eea';
             }}
           >
-            🔄 Refresh
+            Refresh
           </button>
         </div>
       </div>
@@ -265,6 +351,15 @@ export default function Dashboard() {
         </div>
       ) : (
         <>
+          <OpsPulse
+            c={c}
+            isDark={isDark}
+            kpis={kpis}
+            paymentHealth={paymentHealth}
+            inventory={inventoryIntelligence}
+            navigate={navigate}
+          />
+
           {/* MORNING SUMMARY */}
           {morningSummary && (morningSummary.new_orders > 0 || morningSummary.revenue > 0 || morningSummary.pending_dispatch > 0 || morningSummary.failed_payments > 0 || morningSummary.low_stock > 0) && (
             <div style={{
@@ -474,6 +569,98 @@ export default function Dashboard() {
           </div>
         </>
       )}
+    </div>
+  );
+}
+
+function LiveBadge({ label, color }) {
+  return (
+    <span
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        padding: '5px 9px',
+        borderRadius: 999,
+        background: `${color}18`,
+        color,
+        fontSize: 11,
+        fontWeight: 700,
+        border: `1px solid ${color}40`,
+      }}
+    >
+      {label}
+    </span>
+  );
+}
+
+function OpsPulse({ c, isDark, kpis, paymentHealth, inventory, navigate }) {
+  const cards = [
+    {
+      label: 'Payment Desk',
+      value: `${paymentHealth?.success_rate || 0}%`,
+      note: `${paymentHealth?.pending_old || 0} old pending`,
+      color: (paymentHealth?.success_rate || 0) >= 80 ? '#10b981' : '#f59e0b',
+      target: '/payments',
+    },
+    {
+      label: 'Dispatch Queue',
+      value: kpis?.awaiting_dispatch || 0,
+      note: 'Orders pending movement',
+      color: '#3b82f6',
+      target: '/orders',
+    },
+    {
+      label: 'Reorder Pressure',
+      value: (inventory?.low_stock || 0) + (inventory?.reorder_now || 0),
+      note: `${inventory?.out_of_stock || 0} out of stock`,
+      color: (inventory?.out_of_stock || 0) > 0 ? '#ef4444' : '#f59e0b',
+      target: '/inventory',
+    },
+    {
+      label: 'Dead Stock Value',
+      value: `KSh ${(inventory?.dead_stock_value || 0).toLocaleString()}`,
+      note: `${inventory?.dead_stock || 0} sleeping SKUs`,
+      color: '#8b5cf6',
+      target: '/inventory',
+    },
+  ];
+
+  return (
+    <div
+      style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+        gap: 14,
+        marginBottom: 20,
+      }}
+    >
+      {cards.map((card) => (
+        <button
+          key={card.label}
+          type="button"
+          onClick={() => navigate(card.target)}
+          style={{
+            background: c.card,
+            border: `1px solid ${c.border}`,
+            borderLeft: `4px solid ${card.color}`,
+            borderRadius: 8,
+            padding: 16,
+            cursor: 'pointer',
+            textAlign: 'left',
+            boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
+          }}
+        >
+          <div style={{ color: c.textMuted, fontSize: 12, fontWeight: 700, marginBottom: 8 }}>
+            {card.label}
+          </div>
+          <div style={{ color: c.text, fontSize: 24, fontWeight: 800, lineHeight: 1.15 }}>
+            {card.value}
+          </div>
+          <div style={{ color: isDark ? '#cbd5e1' : '#64748b', fontSize: 12, marginTop: 8 }}>
+            {card.note}
+          </div>
+        </button>
+      ))}
     </div>
   );
 }
