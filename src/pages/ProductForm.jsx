@@ -136,6 +136,20 @@ function buildProductPricingSummary(meta) {
   return type;
 }
 
+function deriveStockStatus(product) {
+  const explicit = product?.stock_status_override || product?.stock_status;
+  if (explicit === "low_stock") return "limited_stock";
+  if (["in_stock", "limited_stock", "out_of_stock"].includes(explicit)) return explicit;
+
+  const stock = Number(product?.current_stock ?? 0);
+  const minOrderQty = Math.max(1, Number(product?.min_order_qty || 1));
+  const reorderLevel = Math.max(10, Number(product?.reorder_level || 10), minOrderQty);
+
+  if (!Number.isFinite(stock) || stock <= 0) return "out_of_stock";
+  if (stock <= reorderLevel) return "limited_stock";
+  return "in_stock";
+}
+
 export default function ProductForm() {
   const { id } = useParams();
   const nav = useNavigate();
@@ -202,6 +216,7 @@ export default function ProductForm() {
     cost_price: "",
     reorder_level: "10",
     current_stock: "0",
+    stock_status_override: "in_stock",
     is_combo_eligible: false,
     requires_manual_price: false,
     is_active: true,
@@ -238,6 +253,19 @@ export default function ProductForm() {
     }));
   }
 
+  function updateStockStatus(value) {
+    setForm((prev) => ({
+      ...prev,
+      stock_status_override: value,
+      current_stock:
+        value === "out_of_stock"
+          ? "0"
+          : Number(prev.current_stock) > 0
+            ? prev.current_stock
+            : "1",
+    }));
+  }
+
   function validateForm() {
     if (!form.name.trim()) {
       setErr("Product name is required.");
@@ -262,6 +290,11 @@ export default function ProductForm() {
     const stock = Number(form.current_stock);
     if (!Number.isFinite(stock) || stock < 0) {
       setErr("Current stock cannot be negative.");
+      return false;
+    }
+
+    if (form.stock_status_override !== "out_of_stock" && stock <= 0) {
+      setErr("Current stock must be greater than 0 for products marked in stock or limited stock.");
       return false;
     }
 
@@ -343,6 +376,7 @@ export default function ProductForm() {
             cost_price: product.cost_price != null ? String(product.cost_price) : "",
             reorder_level: String(product.reorder_level || 10),
             current_stock: String(product.current_stock || 0),
+            stock_status_override: deriveStockStatus(product),
             is_combo_eligible: product.is_combo_eligible === true,
             requires_manual_price: product.requires_manual_price === true,
             is_active: product.is_active !== false,
@@ -496,6 +530,7 @@ export default function ProductForm() {
     setSubmitting(true);
 
     try {
+      const stockStatus = form.stock_status_override || "in_stock";
       const payload = {
         name: form.name.trim(),
         description: form.description.trim() || null,
@@ -511,7 +546,8 @@ export default function ProductForm() {
         selling_unit_label: form.selling_unit_label.trim() || "piece",
         cost_price: form.cost_price ? Number(form.cost_price) : null,
         reorder_level: Math.max(0, Number(form.reorder_level) || 10),
-        current_stock: Math.max(0, Number(form.current_stock) || 0),
+        current_stock: stockStatus === "out_of_stock" ? 0 : Math.max(0, Number(form.current_stock) || 0),
+        stock_status_override: stockStatus,
         is_combo_eligible: form.is_combo_eligible === true,
         requires_manual_price: form.requires_manual_price === true,
         is_active: form.is_active === true,
@@ -904,6 +940,22 @@ export default function ProductForm() {
             c={c}
           >
             <FormGrid>
+              <Field
+                label="Storefront stock label"
+                hint="Controls the customer-facing badge. Orders still depend on the actual current stock."
+                c={c}
+              >
+                <select
+                  value={form.stock_status_override}
+                  onChange={(e) => updateStockStatus(e.target.value)}
+                  style={inputStyle(c, isDark)}
+                >
+                  <option value="in_stock">In stock</option>
+                  <option value="limited_stock">Limited stock</option>
+                  <option value="out_of_stock">Out of stock</option>
+                </select>
+              </Field>
+
               <Field label="Current stock" c={c}>
                 <input
                   type="number"
@@ -911,6 +963,7 @@ export default function ProductForm() {
                   value={form.current_stock}
                   onChange={(e) => updateField("current_stock", e.target.value)}
                   placeholder="0"
+                  disabled={form.stock_status_override === "out_of_stock"}
                   style={inputStyle(c, isDark)}
                 />
               </Field>
