@@ -58,6 +58,30 @@ function inRange(value, filter) {
   return date >= start && date <= end;
 }
 
+function inWindow(value, start, end) {
+  if (!value) return false;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return false;
+  return date >= start && date <= end;
+}
+
+function getPreviousRange(filter = "30days") {
+  const { start, end } = getRange(filter);
+  const duration = end.getTime() - start.getTime();
+  return {
+    start: new Date(start.getTime() - duration),
+    end: new Date(start.getTime()),
+  };
+}
+
+function percentChange(current, previous) {
+  const currentValue = toNumber(current);
+  const previousValue = toNumber(previous);
+  if (previousValue === 0 && currentValue === 0) return null;
+  if (previousValue === 0) return 100;
+  return Number((((currentValue - previousValue) / previousValue) * 100).toFixed(1));
+}
+
 function sameDay(value, target = new Date()) {
   if (!value) return false;
   return new Date(value).toDateString() === target.toDateString();
@@ -124,17 +148,36 @@ export const dashboardService = {
 
     const filteredPayments = payments.filter((p) => inRange(p.created_at, filter));
     const filteredOrders = orders.filter((o) => inRange(o.created_at, filter));
+    const previousRange = getPreviousRange(filter);
+    const previousPayments = payments.filter((p) => inWindow(p.created_at, previousRange.start, previousRange.end));
+    const previousOrders = orders.filter((o) => inWindow(o.created_at, previousRange.start, previousRange.end));
     const completedPayments = filteredPayments.filter(isPaid);
+    const previousCompletedPayments = previousPayments.filter(isPaid);
     const failedPayments = filteredPayments.filter((p) =>
       FAILED_PAYMENT_STATUSES.has(String(p.status || "").toLowerCase())
     );
     const pendingPayments = filteredPayments.filter((p) =>
       OPEN_PAYMENT_STATUSES.has(String(p.status || "").toLowerCase())
     );
+    const previousPendingPayments = previousPayments.filter((p) =>
+      OPEN_PAYMENT_STATUSES.has(String(p.status || "").toLowerCase())
+    );
 
     const revenue = completedPayments.reduce((sum, p) => sum + getPaidAmount(p), 0);
+    const previousRevenue = previousCompletedPayments.reduce((sum, p) => sum + getPaidAmount(p), 0);
     const totalOrders = filteredOrders.length;
+    const previousTotalOrders = previousOrders.length;
     const aov = totalOrders > 0 ? Math.round(revenue / totalOrders) : 0;
+    const previousCustomerCount = new Set(previousOrders.map((o) => o.customer_phone || o.customer_name).filter(Boolean)).size;
+    const currentCustomerCount = new Set(filteredOrders.map((o) => o.customer_phone || o.customer_name).filter(Boolean)).size;
+    const paymentSuccessRate =
+      filteredPayments.length > 0
+        ? Math.round((completedPayments.length / filteredPayments.length) * 100)
+        : 0;
+    const previousPaymentSuccessRate =
+      previousPayments.length > 0
+        ? Math.round((previousCompletedPayments.length / previousPayments.length) * 100)
+        : 0;
     const dispatchQueue = filteredOrders.filter((o) =>
       ["pending", "processing"].includes(getOrderStatus(o))
     ).length;
@@ -143,10 +186,7 @@ export const dashboardService = {
       revenue: Math.round(revenue),
       orders: totalOrders,
       aov,
-      payment_success_rate:
-        filteredPayments.length > 0
-          ? Math.round((completedPayments.length / filteredPayments.length) * 100)
-          : 0,
+      payment_success_rate: paymentSuccessRate,
       failed_payments: failedPayments.length,
       pending_payments: pendingPayments.length,
       low_stock:
@@ -154,12 +194,12 @@ export const dashboardService = {
         toNumber(inventory.summary.reorder_now_count),
       out_of_stock: toNumber(inventory.summary.out_of_stock_count),
       awaiting_dispatch: dispatchQueue,
-      new_customers: new Set(filteredOrders.map((o) => o.customer_phone || o.customer_name).filter(Boolean)).size,
-      revenue_trend: 0,
-      orders_trend: 0,
-      payment_trend: 0,
-      pending_trend: 0,
-      customer_trend: 0,
+      new_customers: currentCustomerCount,
+      revenue_trend: percentChange(revenue, previousRevenue),
+      orders_trend: percentChange(totalOrders, previousTotalOrders),
+      payment_trend: percentChange(paymentSuccessRate, previousPaymentSuccessRate),
+      pending_trend: percentChange(previousPendingPayments.length, pendingPayments.length),
+      customer_trend: percentChange(currentCustomerCount, previousCustomerCount),
     };
   },
 
@@ -283,12 +323,12 @@ export const dashboardService = {
       }));
   },
 
-  getRevenueByRegion: async () => {
+  getRevenueByRegion: async (filter = "30days") => {
     const [orders, payments] = await Promise.all([loadOrders(), loadPayments()]);
     const ordersById = new Map(orders.map((o) => [Number(o.id), o]));
     const regionData = {};
 
-    payments.filter(isPaid).forEach((p) => {
+    payments.filter((p) => isPaid(p) && inRange(p.created_at, filter)).forEach((p) => {
       const order = ordersById.get(Number(p.order_id));
       const regionName = order?.region_name || order?.last_sale_region || order?.location_name || "Unassigned";
 
