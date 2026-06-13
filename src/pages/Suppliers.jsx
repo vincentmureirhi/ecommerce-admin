@@ -9,6 +9,74 @@ import {
 } from "../api/suppliers";
 import SupplierForm from "./SupplierForm";
 
+const money = new Intl.NumberFormat("en-KE", {
+  style: "currency",
+  currency: "KES",
+  maximumFractionDigits: 0,
+});
+
+const number = new Intl.NumberFormat("en-KE");
+
+function toNumber(value) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function lower(value) {
+  return String(value || "").toLowerCase();
+}
+
+function getSupplierHealth(supplier) {
+  const productCount = toNumber(supplier.product_count);
+  const leadTime = toNumber(supplier.lead_time_days);
+  const hasContact = Boolean(supplier.phone || supplier.email || supplier.contact_person);
+
+  if (supplier.is_active === false) {
+    return { label: "Inactive", tone: "danger", detail: "Disabled supplier" };
+  }
+
+  if (!hasContact) {
+    return { label: "Contact gap", tone: "warning", detail: "Missing contact details" };
+  }
+
+  if (leadTime >= 14) {
+    return { label: "Long lead", tone: "warning", detail: `${leadTime} day lead time` };
+  }
+
+  if (productCount === 0) {
+    return { label: "No products", tone: "muted", detail: "No stock exposure" };
+  }
+
+  return { label: "Healthy", tone: "success", detail: "Ready for procurement" };
+}
+
+function toneStyle(tone, isDark) {
+  const styles = {
+    success: {
+      background: isDark ? "rgba(22, 163, 74, 0.16)" : "rgba(22, 163, 74, 0.10)",
+      border: isDark ? "rgba(34, 197, 94, 0.30)" : "rgba(22, 163, 74, 0.20)",
+      color: isDark ? "#86efac" : "#15803d",
+    },
+    warning: {
+      background: isDark ? "rgba(245, 158, 11, 0.16)" : "rgba(245, 158, 11, 0.12)",
+      border: isDark ? "rgba(245, 158, 11, 0.34)" : "rgba(245, 158, 11, 0.25)",
+      color: isDark ? "#fbbf24" : "#b45309",
+    },
+    danger: {
+      background: isDark ? "rgba(239, 68, 68, 0.16)" : "rgba(239, 68, 68, 0.10)",
+      border: isDark ? "rgba(248, 113, 113, 0.34)" : "rgba(239, 68, 68, 0.20)",
+      color: isDark ? "#fca5a5" : "#b91c1c",
+    },
+    muted: {
+      background: isDark ? "rgba(148, 163, 184, 0.12)" : "rgba(100, 116, 139, 0.08)",
+      border: isDark ? "rgba(148, 163, 184, 0.24)" : "rgba(100, 116, 139, 0.18)",
+      color: isDark ? "#cbd5e1" : "#475569",
+    },
+  };
+
+  return styles[tone] || styles.muted;
+}
+
 export default function Suppliers() {
   const { isDark } = useTheme();
   const c = getThemeColors(isDark);
@@ -16,16 +84,18 @@ export default function Suppliers() {
   const [suppliers, setSuppliers] = useState([]);
   const [err, setErr] = useState("");
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
   const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [healthFilter, setHealthFilter] = useState("all");
   const [showForm, setShowForm] = useState(false);
   const [editingSupplier, setEditingSupplier] = useState(null);
-  const [hoveredRowId, setHoveredRowId] = useState(null);
 
   async function loadData() {
     setErr("");
     setLoading(true);
     try {
-      const data = await listSuppliers({ search });
+      const data = await listSuppliers();
       setSuppliers(Array.isArray(data.data) ? data.data : []);
     } catch (e) {
       setErr(e?.message || "Failed to load suppliers");
@@ -34,39 +104,103 @@ export default function Suppliers() {
     }
   }
 
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  const enrichedSuppliers = useMemo(
+    () =>
+      suppliers.map((supplier) => ({
+        ...supplier,
+        health: getSupplierHealth(supplier),
+      })),
+    [suppliers]
+  );
+
+  const filteredSuppliers = useMemo(() => {
+    const query = lower(search).trim();
+
+    return enrichedSuppliers.filter((supplier) => {
+      const health = supplier.health;
+      const matchesSearch =
+        !query ||
+        [
+          supplier.name,
+          supplier.contact_person,
+          supplier.phone,
+          supplier.email,
+          supplier.payment_terms,
+          supplier.address,
+        ]
+          .map(lower)
+          .some((value) => value.includes(query));
+
+      const matchesStatus =
+        statusFilter === "all" ||
+        (statusFilter === "active" && supplier.is_active !== false) ||
+        (statusFilter === "inactive" && supplier.is_active === false);
+
+      const matchesHealth = healthFilter === "all" || health.label === healthFilter;
+
+      return matchesSearch && matchesStatus && matchesHealth;
+    });
+  }, [enrichedSuppliers, healthFilter, search, statusFilter]);
+
+  const stats = useMemo(() => {
+    const totalSuppliers = suppliers.length;
+    const activeSuppliers = suppliers.filter((s) => s.is_active !== false).length;
+    const inactiveSuppliers = suppliers.filter((s) => s.is_active === false).length;
+    const totalStockValue = suppliers.reduce((sum, s) => sum + toNumber(s.stock_value), 0);
+    const totalProducts = suppliers.reduce((sum, s) => sum + toNumber(s.product_count), 0);
+    const contactGaps = enrichedSuppliers.filter((s) => s.health.label === "Contact gap").length;
+    const longLead = enrichedSuppliers.filter((s) => s.health.label === "Long lead").length;
+    const activeRatio = totalSuppliers > 0 ? Math.round((activeSuppliers / totalSuppliers) * 100) : 0;
+
+    return {
+      totalSuppliers,
+      activeSuppliers,
+      inactiveSuppliers,
+      totalStockValue,
+      totalProducts,
+      contactGaps,
+      longLead,
+      activeRatio,
+    };
+  }, [enrichedSuppliers, suppliers]);
+
   async function onDelete(id, productCount) {
     setErr("");
 
-    if (productCount > 0) {
-      setErr(
-        `Cannot delete! This supplier has ${productCount} product(s). Please reassign them first.`
-      );
+    if (Number(productCount) > 0) {
+      setErr(`Cannot delete this supplier while ${productCount} product(s) are still assigned.`);
       return;
     }
 
-    if (!window.confirm("Are you sure you want to delete this supplier?")) return;
+    if (!window.confirm("Delete this supplier record?")) return;
 
     try {
       await deleteSupplier(id);
       setSuppliers((prev) => prev.filter((s) => s.id !== id));
     } catch (e) {
-      setErr(e?.message || "Failed to delete");
+      setErr(e?.message || "Failed to delete supplier");
     }
   }
 
-  const openCreate = () => {
+  function openCreate() {
     setEditingSupplier(null);
     setShowForm(true);
     setErr("");
-  };
+  }
 
-  const openEdit = (supplier) => {
+  function openEdit(supplier) {
     setEditingSupplier(supplier);
     setShowForm(true);
     setErr("");
-  };
+  }
 
-  const handleSave = async (payload) => {
+  async function handleSave(payload) {
+    setSaving(true);
+    setErr("");
     try {
       if (editingSupplier) {
         await updateSupplier(editingSupplier.id, payload);
@@ -75,606 +209,305 @@ export default function Suppliers() {
       }
       setShowForm(false);
       setEditingSupplier(null);
-      loadData();
+      await loadData();
     } catch (e) {
       setErr(e?.message || "Failed to save supplier");
+    } finally {
+      setSaving(false);
     }
-  };
+  }
 
-  const handleCancel = () => {
+  function handleCancel() {
+    if (saving) return;
     setShowForm(false);
     setEditingSupplier(null);
-  };
+  }
 
-  useEffect(() => {
-    loadData();
-  }, [search]);
-
-  const stats = useMemo(() => {
-    const totalSuppliers = suppliers.length;
-    const activeSuppliers = suppliers.filter((s) => s.is_active === true).length;
-    const inactiveSuppliers = suppliers.filter((s) => s.is_active === false).length;
-    const totalStockValue = suppliers.reduce(
-      (sum, s) => sum + Number(s.stock_value || 0),
-      0
-    );
-    const totalProducts = suppliers.reduce(
-      (sum, s) => sum + Number(s.product_count || 0),
-      0
-    );
-
-    return {
-      totalSuppliers,
-      activeSuppliers,
-      inactiveSuppliers,
-      totalStockValue,
-      totalProducts,
-    };
-  }, [suppliers]);
-
-  const dashStyle = {
-    color: c.textMuted,
-    opacity: 0.7,
-  };
-
-  const thStyle = {
-    padding: "14px 12px",
-    fontSize: 12,
-    fontWeight: 700,
-    color: c.textMuted,
-    whiteSpace: "nowrap",
-    letterSpacing: "0.02em",
-    textTransform: "uppercase",
-    position: "sticky",
-    top: 0,
-    background: c.headerBg,
-    zIndex: 1,
-  };
-
-  const cellStyle = {
-    padding: "14px 12px",
-    fontSize: 13,
+  const shellStyle = {
+    background: c.bg,
+    minHeight: "100vh",
+    padding: "20px",
     color: c.text,
-    verticalAlign: "middle",
   };
 
-  const mutedCellStyle = {
-    padding: "14px 12px",
-    fontSize: 13,
-    color: c.textMuted,
-    verticalAlign: "middle",
-  };
-
-  const statCardStyle = {
+  const panelStyle = {
     background: c.card,
     border: `1px solid ${c.border}`,
-    borderRadius: 14,
-    padding: 18,
-    boxShadow: isDark
-      ? "0 8px 20px rgba(0,0,0,0.18)"
-      : "0 6px 18px rgba(15,23,42,0.06)",
+    borderRadius: 8,
+    boxShadow: isDark ? "0 10px 28px rgba(0,0,0,0.20)" : "0 10px 30px rgba(15,23,42,0.06)",
   };
 
-  const cardLabelStyle = {
-    margin: 0,
-    fontSize: 12,
-    fontWeight: 700,
-    color: c.textMuted,
-    textTransform: "uppercase",
-    letterSpacing: "0.04em",
-  };
-
-  const cardValueStyle = {
-    margin: "10px 0 4px",
-    fontSize: 28,
-    fontWeight: 800,
+  const inputStyle = {
+    width: "100%",
+    border: `1px solid ${c.border}`,
+    borderRadius: 8,
+    background: c.bg,
     color: c.text,
-    lineHeight: 1.1,
+    fontSize: 13,
+    outline: "none",
+    padding: "11px 12px",
+    boxSizing: "border-box",
   };
 
-  const cardSubTextStyle = {
-    margin: 0,
-    fontSize: 12,
-    color: c.textMuted,
+  const selectStyle = {
+    ...inputStyle,
+    minWidth: 160,
+    width: "auto",
+  };
+
+  const buttonStyle = {
+    border: "none",
+    borderRadius: 8,
+    background: "#0f766e",
+    color: "#fff",
+    cursor: "pointer",
+    fontSize: 13,
+    fontWeight: 800,
+    padding: "11px 16px",
+    whiteSpace: "nowrap",
   };
 
   if (loading) {
     return (
-      <div
-        style={{
-          padding: 40,
-          textAlign: "center",
-          color: c.textMuted,
-          background: c.bg,
-          minHeight: "100vh",
-        }}
-      >
-        Loading...
+      <div style={shellStyle}>
+        <div style={{ ...panelStyle, padding: 28, color: c.textMuted }}>Loading suppliers...</div>
       </div>
     );
   }
 
   return (
-    <div style={{ background: c.bg, minHeight: "100vh", padding: "20px" }}>
+    <div style={shellStyle}>
       <div
         style={{
-          marginBottom: 24,
           display: "flex",
           justifyContent: "space-between",
-          alignItems: "center",
-          gap: 12,
+          alignItems: "flex-start",
+          gap: 16,
           flexWrap: "wrap",
+          marginBottom: 18,
         }}
       >
         <div>
-          <h1
-            style={{
-              marginTop: 0,
-              marginBottom: 5,
-              fontSize: 30,
-              fontWeight: 800,
-              color: c.text,
-              letterSpacing: "-0.02em",
-            }}
-          >
-            🏢 Suppliers
+          <p style={{ margin: "0 0 6px", color: "#0f766e", fontSize: 12, fontWeight: 800, letterSpacing: 0 }}>
+            Procurement control
+          </p>
+          <h1 style={{ margin: 0, color: c.text, fontSize: 30, fontWeight: 900, letterSpacing: 0 }}>
+            Supplier Command
           </h1>
-          <p style={{ margin: 0, color: c.textMuted, fontSize: 13 }}>
-            Manage supplier records, stock exposure, and business terms
+          <p style={{ margin: "7px 0 0", color: c.textMuted, fontSize: 13 }}>
+            Supplier health, linked stock exposure, contact readiness, and replenishment pressure.
           </p>
         </div>
 
-        <button
-          onClick={openCreate}
-          style={{
-            padding: "11px 16px",
-            borderRadius: 10,
-            border: "none",
-            background: "#667eea",
-            color: "#fff",
-            fontSize: 13,
-            fontWeight: 700,
-            cursor: "pointer",
-            whiteSpace: "nowrap",
-            boxShadow: "0 10px 20px rgba(102,126,234,0.22)",
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.transform = "translateY(-1px)";
-            e.currentTarget.style.boxShadow = "0 14px 24px rgba(102,126,234,0.28)";
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.transform = "translateY(0)";
-            e.currentTarget.style.boxShadow = "0 10px 20px rgba(102,126,234,0.22)";
-          }}
-        >
-          + Add Supplier
-        </button>
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+          <button
+            type="button"
+            onClick={loadData}
+            style={{
+              ...buttonStyle,
+              background: isDark ? "#1f2937" : "#e2e8f0",
+              color: isDark ? "#f8fafc" : "#0f172a",
+            }}
+          >
+            Refresh
+          </button>
+          <button type="button" onClick={openCreate} style={buttonStyle}>
+            Add supplier
+          </button>
+        </div>
       </div>
 
       {err && (
         <div
           style={{
-            background: isDark ? "rgba(220, 53, 69, 0.1)" : "#fee",
-            color: isDark ? "#ff6b6b" : "#c33",
-            padding: 12,
-            borderRadius: 10,
-            marginBottom: 20,
-            border: `1px solid ${isDark ? "rgba(220, 53, 69, 0.3)" : "#fdd"}`,
+            ...panelStyle,
+            borderColor: isDark ? "rgba(248,113,113,0.4)" : "rgba(220,38,38,0.18)",
+            color: isDark ? "#fca5a5" : "#b91c1c",
+            padding: 13,
+            marginBottom: 16,
           }}
         >
-          ⚠️ {err}
+          {err}
         </div>
       )}
 
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-          gap: 14,
-          marginBottom: 22,
+          gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))",
+          gap: 12,
+          marginBottom: 16,
         }}
       >
-        <div style={statCardStyle}>
-          <p style={cardLabelStyle}>Total Suppliers</p>
-          <p style={cardValueStyle}>{stats.totalSuppliers}</p>
-          <p style={cardSubTextStyle}>All supplier records currently listed</p>
-        </div>
-
-        <div style={statCardStyle}>
-          <p style={cardLabelStyle}>Active Suppliers</p>
-          <p style={cardValueStyle}>{stats.activeSuppliers}</p>
-          <p style={cardSubTextStyle}>Suppliers currently marked as active</p>
-        </div>
-
-        <div style={statCardStyle}>
-          <p style={cardLabelStyle}>Inactive Suppliers</p>
-          <p style={cardValueStyle}>{stats.inactiveSuppliers}</p>
-          <p style={cardSubTextStyle}>Suppliers not active at the moment</p>
-        </div>
-
-        <div style={statCardStyle}>
-          <p style={cardLabelStyle}>Total Stock Value</p>
-          <p style={cardValueStyle}>
-            KES {stats.totalStockValue.toLocaleString()}
-          </p>
-          <p style={cardSubTextStyle}>
-            Across {stats.totalProducts.toLocaleString()} linked products
-          </p>
-        </div>
+        <MetricCard label="Suppliers" value={number.format(stats.totalSuppliers)} sub={`${stats.activeRatio}% active`} c={c} isDark={isDark} />
+        <MetricCard label="Linked Products" value={number.format(stats.totalProducts)} sub="Assigned catalogue items" c={c} isDark={isDark} />
+        <MetricCard label="Stock Exposure" value={money.format(stats.totalStockValue)} sub="Retail stock value" c={c} isDark={isDark} />
+        <MetricCard label="Attention" value={number.format(stats.contactGaps + stats.longLead + stats.inactiveSuppliers)} sub="Contact, lead, or status issues" c={c} isDark={isDark} />
       </div>
 
-      <div
-        style={{
-          marginBottom: 18,
-          background: c.card,
-          border: `1px solid ${c.border}`,
-          borderRadius: 14,
-          padding: 14,
-          boxShadow: isDark
-            ? "0 8px 20px rgba(0,0,0,0.16)"
-            : "0 4px 14px rgba(15,23,42,0.05)",
-        }}
-      >
-        <div
-          style={{
-            display: "flex",
-            gap: 12,
-            alignItems: "center",
-            flexWrap: "wrap",
-          }}
-        >
-          <div style={{ flex: "1 1 320px" }}>
+      <div style={{ ...panelStyle, padding: 14, marginBottom: 16 }}>
+        <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+          <div style={{ flex: "1 1 280px" }}>
             <input
-              type="text"
-              placeholder="Search suppliers..."
+              type="search"
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              style={{
-                width: "100%",
-                padding: "11px 13px",
-                border: `1px solid ${c.border}`,
-                borderRadius: 10,
-                fontSize: 13,
-                background: c.bg,
-                color: c.text,
-                outline: "none",
-                boxSizing: "border-box",
-              }}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search name, phone, email, contact, payment terms..."
+              style={inputStyle}
             />
           </div>
 
-          <div
-            style={{
-              padding: "8px 12px",
-              borderRadius: 999,
-              background: isDark ? "rgba(102,126,234,0.15)" : "#eef2ff",
-              color: "#667eea",
-              fontSize: 12,
-              fontWeight: 700,
-              whiteSpace: "nowrap",
-            }}
-          >
-            {suppliers.length} supplier{suppliers.length === 1 ? "" : "s"}
+          <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} style={selectStyle}>
+            <option value="all">All status</option>
+            <option value="active">Active</option>
+            <option value="inactive">Inactive</option>
+          </select>
+
+          <select value={healthFilter} onChange={(event) => setHealthFilter(event.target.value)} style={selectStyle}>
+            <option value="all">All health</option>
+            <option value="Healthy">Healthy</option>
+            <option value="Contact gap">Contact gap</option>
+            <option value="Long lead">Long lead</option>
+            <option value="No products">No products</option>
+            <option value="Inactive">Inactive</option>
+          </select>
+
+          <div style={{ color: c.textMuted, fontSize: 12, fontWeight: 700 }}>
+            Showing {number.format(filteredSuppliers.length)} of {number.format(suppliers.length)}
           </div>
         </div>
       </div>
 
-      {suppliers.length === 0 && (
-        <div
-          style={{
-            textAlign: "center",
-            padding: 60,
-            background: c.card,
-            borderRadius: 14,
-            color: c.textMuted,
-            border: `1px solid ${c.border}`,
-            boxShadow: isDark
-              ? "0 8px 20px rgba(0,0,0,0.16)"
-              : "0 4px 14px rgba(15,23,42,0.05)",
-          }}
-        >
-          🔭 No suppliers found
+      {filteredSuppliers.length === 0 ? (
+        <div style={{ ...panelStyle, padding: 44, textAlign: "center", color: c.textMuted }}>
+          No supplier records match the current filters.
         </div>
-      )}
-
-      {suppliers.length > 0 && (
-        <div
-          style={{
-            background: c.card,
-            borderRadius: 14,
-            overflow: "hidden",
-            boxShadow: isDark
-              ? "0 10px 24px rgba(0,0,0,0.18)"
-              : "0 8px 24px rgba(15,23,42,0.06)",
-            border: `1px solid ${c.border}`,
-            overflowX: "auto",
-            maxHeight: "70vh",
-          }}
-        >
-          <table
-            style={{
-              width: "100%",
-              minWidth: 1220,
-              borderCollapse: "separate",
-              borderSpacing: 0,
-            }}
-          >
-            <thead>
-              <tr>
-                <th style={{ ...thStyle, textAlign: "left" }}>Name</th>
-                <th style={{ ...thStyle, textAlign: "left" }}>Contact</th>
-                <th style={{ ...thStyle, textAlign: "left" }}>Phone</th>
-                <th style={{ ...thStyle, textAlign: "left" }}>Email</th>
-                <th style={{ ...thStyle, textAlign: "center" }}>Status</th>
-                <th style={{ ...thStyle, textAlign: "center" }}>Products</th>
-                <th style={{ ...thStyle, textAlign: "center" }}>Total Stock</th>
-                <th style={{ ...thStyle, textAlign: "right" }}>Stock Value</th>
-                <th style={{ ...thStyle, textAlign: "left" }}>Actions</th>
-              </tr>
-            </thead>
-
-            <tbody>
-              {suppliers.map((supplier, idx) => {
-                const hasStatus =
-                  supplier.is_active === true || supplier.is_active === false;
-
-                const isHovered = hoveredRowId === supplier.id;
-
-                return (
-                  <tr
-                    key={supplier.id}
-                    onMouseEnter={() => setHoveredRowId(supplier.id)}
-                    onMouseLeave={() => setHoveredRowId(null)}
-                    style={{
-                      background: isHovered
-                        ? isDark
-                          ? "rgba(102,126,234,0.08)"
-                          : "#f8faff"
-                        : idx % 2 === 0
-                        ? c.rowBg1
-                        : c.rowBg2,
-                      transition: "background 0.18s ease",
-                    }}
-                  >
-                    <td
+      ) : (
+        <div style={{ ...panelStyle, overflow: "hidden" }}>
+          <div style={{ overflowX: "auto", maxHeight: "72vh" }}>
+            <table style={{ width: "100%", minWidth: 1180, borderCollapse: "separate", borderSpacing: 0 }}>
+              <thead>
+                <tr>
+                  {[
+                    "Supplier",
+                    "Health",
+                    "Contact",
+                    "Terms",
+                    "Products",
+                    "Stock",
+                    "Exposure",
+                    "Actions",
+                  ].map((label, index) => (
+                    <th
+                      key={label}
                       style={{
-                        ...cellStyle,
-                        fontWeight: 700,
-                        minWidth: 180,
-                        borderBottom: `1px solid ${c.borderLight}`,
+                        position: "sticky",
+                        top: 0,
+                        zIndex: 1,
+                        background: c.headerBg,
+                        borderBottom: `1px solid ${c.border}`,
+                        color: c.textMuted,
+                        fontSize: 11,
+                        fontWeight: 900,
+                        letterSpacing: 0,
+                        padding: "13px 14px",
+                        textAlign: index >= 4 && index <= 6 ? "right" : "left",
+                        textTransform: "uppercase",
+                        whiteSpace: "nowrap",
                       }}
                     >
-                      <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-                        <span>{supplier.name}</span>
-                        <span
-                          style={{
-                            fontSize: 11,
-                            color: c.textMuted,
-                            fontWeight: 500,
-                          }}
-                        >
+                      {label}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {filteredSuppliers.map((supplier) => {
+                  const health = supplier.health;
+                  const tone = toneStyle(health.tone, isDark);
+                  const productCount = toNumber(supplier.product_count);
+
+                  return (
+                    <tr key={supplier.id} style={{ background: c.card }}>
+                      <td style={tdStyle(c)}>
+                        <div style={{ fontWeight: 900, color: c.text }}>{supplier.name}</div>
+                        <div style={{ marginTop: 4, color: c.textMuted, fontSize: 12 }}>
                           ID #{supplier.id}
-                        </span>
-                      </div>
-                    </td>
+                          {supplier.address ? ` - ${supplier.address}` : ""}
+                        </div>
+                      </td>
 
-                    <td
-                      style={{
-                        ...mutedCellStyle,
-                        minWidth: 150,
-                        borderBottom: `1px solid ${c.borderLight}`,
-                      }}
-                    >
-                      {supplier.contact_person ? (
-                        supplier.contact_person
-                      ) : (
-                        <span style={dashStyle}>—</span>
-                      )}
-                    </td>
-
-                    <td
-                      style={{
-                        ...mutedCellStyle,
-                        minWidth: 130,
-                        borderBottom: `1px solid ${c.borderLight}`,
-                      }}
-                    >
-                      {supplier.phone ? (
-                        supplier.phone
-                      ) : (
-                        <span style={dashStyle}>—</span>
-                      )}
-                    </td>
-
-                    <td
-                      style={{
-                        ...mutedCellStyle,
-                        minWidth: 220,
-                        whiteSpace: "nowrap",
-                        borderBottom: `1px solid ${c.borderLight}`,
-                      }}
-                    >
-                      {supplier.email ? (
-                        supplier.email
-                      ) : (
-                        <span style={dashStyle}>—</span>
-                      )}
-                    </td>
-
-                    <td
-                      style={{
-                        ...mutedCellStyle,
-                        textAlign: "center",
-                        minWidth: 120,
-                        borderBottom: `1px solid ${c.borderLight}`,
-                      }}
-                    >
-                      {hasStatus ? (
+                      <td style={tdStyle(c)}>
                         <span
                           style={{
-                            display: "inline-block",
-                            padding: "6px 10px",
+                            display: "inline-flex",
+                            flexDirection: "column",
+                            gap: 2,
                             borderRadius: 999,
-                            fontSize: 11,
-                            fontWeight: 700,
-                            background: supplier.is_active
-                              ? isDark
-                                ? "rgba(34, 197, 94, 0.18)"
-                                : "rgba(34, 197, 94, 0.12)"
-                              : isDark
-                              ? "rgba(239, 68, 68, 0.18)"
-                              : "rgba(239, 68, 68, 0.12)",
-                            color: supplier.is_active ? "#16a34a" : "#dc2626",
-                            border: `1px solid ${
-                              supplier.is_active
-                                ? isDark
-                                  ? "rgba(34, 197, 94, 0.35)"
-                                  : "rgba(34, 197, 94, 0.25)"
-                                : isDark
-                                ? "rgba(239, 68, 68, 0.35)"
-                                : "rgba(239, 68, 68, 0.25)"
-                            }`,
+                            border: `1px solid ${tone.border}`,
+                            background: tone.background,
+                            color: tone.color,
+                            padding: "7px 11px",
+                            minWidth: 118,
                           }}
                         >
-                          {supplier.is_active ? "Active" : "Inactive"}
+                          <span style={{ fontSize: 12, fontWeight: 900 }}>{health.label}</span>
+                          <span style={{ fontSize: 10, opacity: 0.82 }}>{health.detail}</span>
                         </span>
-                      ) : (
-                        <span style={dashStyle}>—</span>
-                      )}
-                    </td>
+                      </td>
 
-                    <td
-                      style={{
-                        ...mutedCellStyle,
-                        textAlign: "center",
-                        minWidth: 100,
-                        borderBottom: `1px solid ${c.borderLight}`,
-                      }}
-                    >
-                      <span
-                        style={{
-                          background: isDark ? "rgba(102, 126, 234, 0.2)" : "#e3f2fd",
-                          color: "#667eea",
-                          padding: "5px 9px",
-                          borderRadius: 999,
-                          fontSize: 11,
-                          fontWeight: 700,
-                        }}
-                      >
-                        {supplier.product_count || 0}
-                      </span>
-                    </td>
+                      <td style={tdStyle(c)}>
+                        <div style={{ color: c.text, fontWeight: 700 }}>{supplier.contact_person || "No contact person"}</div>
+                        <div style={{ marginTop: 4, color: c.textMuted, fontSize: 12 }}>
+                          {supplier.phone || "No phone"} {supplier.email ? `- ${supplier.email}` : ""}
+                        </div>
+                      </td>
 
-                    <td
-                      style={{
-                        ...mutedCellStyle,
-                        textAlign: "center",
-                        minWidth: 120,
-                        borderBottom: `1px solid ${c.borderLight}`,
-                      }}
-                    >
-                      <span
-                        style={{
-                          background: isDark ? "rgba(102, 126, 234, 0.15)" : "#f0f5ff",
-                          color: "#667eea",
-                          padding: "5px 9px",
-                          borderRadius: 999,
-                          fontSize: 11,
-                          fontWeight: 700,
-                        }}
-                      >
-                        {supplier.total_stock || 0} units
-                      </span>
-                    </td>
+                      <td style={tdStyle(c)}>
+                        <div style={{ color: c.text, fontWeight: 700 }}>{supplier.payment_terms || "Terms not set"}</div>
+                        <div style={{ marginTop: 4, color: c.textMuted, fontSize: 12 }}>
+                          Lead time: {toNumber(supplier.lead_time_days)} day(s)
+                        </div>
+                      </td>
 
-                    <td
-                      style={{
-                        ...cellStyle,
-                        fontWeight: 700,
-                        textAlign: "right",
-                        minWidth: 140,
-                        whiteSpace: "nowrap",
-                        borderBottom: `1px solid ${c.borderLight}`,
-                      }}
-                    >
-                      KES {parseFloat(supplier.stock_value || 0).toLocaleString()}
-                    </td>
+                      <td style={{ ...tdStyle(c), textAlign: "right", fontWeight: 900 }}>
+                        {number.format(productCount)}
+                      </td>
 
-                    <td
-                      style={{
-                        ...mutedCellStyle,
-                        minWidth: 185,
-                        borderBottom: `1px solid ${c.borderLight}`,
-                      }}
-                    >
-                      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                        <button
-                          onClick={() => openEdit(supplier)}
-                          style={{
-                            padding: "7px 12px",
-                            background: "#0ea5e9",
-                            color: "white",
-                            border: "none",
-                            borderRadius: 8,
-                            cursor: "pointer",
-                            fontSize: 11,
-                            fontWeight: 700,
-                          }}
-                          onMouseEnter={(e) => {
-                            e.currentTarget.style.opacity = "0.9";
-                          }}
-                          onMouseLeave={(e) => {
-                            e.currentTarget.style.opacity = "1";
-                          }}
-                        >
-                          ✏️ Edit
-                        </button>
+                      <td style={{ ...tdStyle(c), textAlign: "right", fontWeight: 900 }}>
+                        {number.format(toNumber(supplier.total_stock))}
+                      </td>
 
-                        <button
-                          onClick={() => onDelete(supplier.id, supplier.product_count)}
-                          disabled={supplier.product_count > 0}
-                          style={{
-                            padding: "7px 12px",
-                            background:
-                              supplier.product_count > 0
-                                ? isDark
-                                  ? "#475569"
-                                  : "#ccc"
-                                : "#dc3545",
-                            color: "white",
-                            border: "none",
-                            borderRadius: 8,
-                            cursor:
-                              supplier.product_count > 0 ? "not-allowed" : "pointer",
-                            fontSize: 11,
-                            fontWeight: 700,
-                            opacity: supplier.product_count > 0 ? 0.6 : 1,
-                          }}
-                          title={
-                            supplier.product_count > 0
-                              ? `Cannot delete - ${supplier.product_count} products assigned`
-                              : "Delete supplier"
-                          }
-                          onMouseEnter={(e) => {
-                            if (supplier.product_count === 0) {
-                              e.currentTarget.style.opacity = "0.9";
-                            }
-                          }}
-                          onMouseLeave={(e) => {
-                            if (supplier.product_count === 0) {
-                              e.currentTarget.style.opacity = "1";
-                            }
-                          }}
-                        >
-                          🗑️ Delete
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+                      <td style={{ ...tdStyle(c), textAlign: "right", fontWeight: 900, whiteSpace: "nowrap" }}>
+                        {money.format(toNumber(supplier.stock_value))}
+                      </td>
+
+                      <td style={tdStyle(c)}>
+                        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                          <button type="button" onClick={() => openEdit(supplier)} style={tableButtonStyle("#0f766e")}>
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => onDelete(supplier.id, supplier.product_count)}
+                            disabled={productCount > 0}
+                            title={productCount > 0 ? "Reassign products before deleting this supplier" : "Delete supplier"}
+                            style={{
+                              ...tableButtonStyle(productCount > 0 ? "#64748b" : "#b91c1c"),
+                              opacity: productCount > 0 ? 0.58 : 1,
+                              cursor: productCount > 0 ? "not-allowed" : "pointer",
+                            }}
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
@@ -683,8 +516,54 @@ export default function Suppliers() {
           initialData={editingSupplier || {}}
           onSave={handleSave}
           onCancel={handleCancel}
+          saving={saving}
         />
       )}
     </div>
   );
+}
+
+function MetricCard({ label, value, sub, c, isDark }) {
+  return (
+    <div
+      style={{
+        background: c.card,
+        border: `1px solid ${c.border}`,
+        borderRadius: 8,
+        padding: 16,
+        boxShadow: isDark ? "0 10px 24px rgba(0,0,0,0.18)" : "0 10px 30px rgba(15,23,42,0.05)",
+      }}
+    >
+      <p style={{ margin: 0, color: c.textMuted, fontSize: 11, fontWeight: 900, letterSpacing: 0, textTransform: "uppercase" }}>
+        {label}
+      </p>
+      <p style={{ margin: "9px 0 4px", color: c.text, fontSize: 26, fontWeight: 950, lineHeight: 1.05 }}>
+        {value}
+      </p>
+      <p style={{ margin: 0, color: c.textMuted, fontSize: 12 }}>{sub}</p>
+    </div>
+  );
+}
+
+function tdStyle(c) {
+  return {
+    borderBottom: `1px solid ${c.borderLight}`,
+    color: c.text,
+    fontSize: 13,
+    padding: "14px",
+    verticalAlign: "middle",
+  };
+}
+
+function tableButtonStyle(background) {
+  return {
+    background,
+    border: "none",
+    borderRadius: 8,
+    color: "#fff",
+    cursor: "pointer",
+    fontSize: 12,
+    fontWeight: 850,
+    padding: "8px 11px",
+  };
 }

@@ -44,11 +44,11 @@ export default function SupplierForm({ initialData = {}, onSave, onCancel, savin
 
   const inputStyle = {
     width: "100%",
-    padding: "10px 12px",
+    padding: "11px 12px",
     border: `1px solid ${c.border}`,
     borderRadius: 8,
     fontSize: 13,
-    background: c.card,
+    background: c.bg,
     color: c.text,
     outline: "none",
     boxSizing: "border-box",
@@ -58,7 +58,7 @@ export default function SupplierForm({ initialData = {}, onSave, onCancel, savin
     display: "block",
     marginBottom: 6,
     fontSize: 12,
-    fontWeight: 600,
+    fontWeight: 800,
     color: c.textMuted,
   };
 
@@ -71,6 +71,8 @@ export default function SupplierForm({ initialData = {}, onSave, onCancel, savin
       return;
     }
 
+    const parsedLeadTime = Number(leadTimeDays);
+
     const payload = {
       name: name.trim(),
       description: description.trim(),
@@ -81,7 +83,7 @@ export default function SupplierForm({ initialData = {}, onSave, onCancel, savin
       notes: notes.trim(),
       is_active: isActive,
       payment_terms: paymentTerms.trim(),
-      lead_time_days: Number.isNaN(Number(leadTimeDays)) ? 0 : Number(leadTimeDays),
+      lead_time_days: Number.isFinite(parsedLeadTime) && parsedLeadTime >= 0 ? parsedLeadTime : 0,
     };
 
     onSave(payload);
@@ -92,24 +94,24 @@ export default function SupplierForm({ initialData = {}, onSave, onCancel, savin
       style={{
         position: "fixed",
         inset: 0,
-        background: "rgba(0,0,0,0.45)",
+        background: "rgba(15,23,42,0.58)",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        padding: 20,
+        padding: 18,
         zIndex: 2000,
       }}
     >
       <div
         style={{
           width: "100%",
-          maxWidth: 620,
-          maxHeight: "90vh",
+          maxWidth: 720,
+          maxHeight: "92vh",
           overflowY: "auto",
           background: c.card,
           border: `1px solid ${c.border}`,
-          borderRadius: 14,
-          boxShadow: "0 20px 50px rgba(0,0,0,0.18)",
+          borderRadius: 8,
+          boxShadow: "0 24px 64px rgba(0,0,0,0.24)",
         }}
       >
         <div
@@ -118,15 +120,19 @@ export default function SupplierForm({ initialData = {}, onSave, onCancel, savin
             borderBottom: `1px solid ${c.border}`,
             display: "flex",
             justifyContent: "space-between",
-            alignItems: "center",
+            alignItems: "flex-start",
+            gap: 16,
           }}
         >
           <div>
-            <h2 style={{ margin: 0, fontSize: 20, color: c.text }}>
-              {initialData?.id ? "Edit Supplier" : "Add Supplier"}
+            <p style={{ margin: "0 0 5px", color: "#0f766e", fontSize: 11, fontWeight: 900, textTransform: "uppercase" }}>
+              Supplier record
+            </p>
+            <h2 style={{ margin: 0, fontSize: 21, color: c.text, fontWeight: 900 }}>
+              {initialData?.id ? "Edit supplier" : "Add supplier"}
             </h2>
-            <p style={{ margin: "4px 0 0", fontSize: 12, color: c.textMuted }}>
-              Fill in supplier details below
+            <p style={{ margin: "5px 0 0", fontSize: 12, color: c.textMuted }}>
+              Maintain contacts, terms, lead times, and operational notes.
             </p>
           </div>
 
@@ -134,16 +140,21 @@ export default function SupplierForm({ initialData = {}, onSave, onCancel, savin
             type="button"
             onClick={onCancel}
             disabled={saving}
+            aria-label="Close supplier form"
             style={{
-              border: "none",
-              background: "transparent",
-              color: c.textMuted,
-              cursor: "pointer",
-              fontSize: 20,
-              fontWeight: 700,
+              border: `1px solid ${c.border}`,
+              background: c.bg,
+              color: c.text,
+              cursor: saving ? "not-allowed" : "pointer",
+              borderRadius: 8,
+              fontSize: 18,
+              fontWeight: 900,
+              width: 34,
+              height: 34,
+              lineHeight: "30px",
             }}
           >
-            ×
+            x
           </button>
         </div>
 
@@ -151,27 +162,27 @@ export default function SupplierForm({ initialData = {}, onSave, onCancel, savin
           {err && (
             <div
               style={{
-                background: isDark ? "rgba(220, 53, 69, 0.1)" : "#fee",
-                color: isDark ? "#ff6b6b" : "#c33",
+                background: isDark ? "rgba(239, 68, 68, 0.12)" : "rgba(239, 68, 68, 0.08)",
+                color: isDark ? "#fca5a5" : "#b91c1c",
                 padding: 12,
                 borderRadius: 8,
                 marginBottom: 16,
-                border: `1px solid ${isDark ? "rgba(220, 53, 69, 0.3)" : "#fdd"}`,
+                border: `1px solid ${isDark ? "rgba(248, 113, 113, 0.34)" : "rgba(239, 68, 68, 0.18)"}`,
                 fontSize: 13,
               }}
             >
-              ⚠️ {err}
+              {err}
             </div>
           )}
 
           <div style={{ display: "grid", gap: 14 }}>
             <div>
-              <label style={labelStyle}>Supplier Name *</label>
+              <label style={labelStyle}>Supplier name *</label>
               <input
                 type="text"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder="Enter supplier name"
+                placeholder="Supplier or manufacturer name"
                 required
                 style={inputStyle}
               />
@@ -183,19 +194,19 @@ export default function SupplierForm({ initialData = {}, onSave, onCancel, savin
                 type="text"
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
-                placeholder="Short description"
+                placeholder="What this supplier mainly provides"
                 style={inputStyle}
               />
             </div>
 
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 14 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 14 }}>
               <div>
-                <label style={labelStyle}>Contact Person</label>
+                <label style={labelStyle}>Contact person</label>
                 <input
                   type="text"
                   value={contactPerson}
                   onChange={(e) => setContactPerson(e.target.value)}
-                  placeholder="Main contact person"
+                  placeholder="Primary contact"
                   style={inputStyle}
                 />
               </div>
@@ -203,66 +214,53 @@ export default function SupplierForm({ initialData = {}, onSave, onCancel, savin
               <div>
                 <label style={labelStyle}>Phone</label>
                 <input
-                  type="text"
+                  type="tel"
                   value={phone}
                   onChange={(e) => setPhone(e.target.value)}
-                  placeholder="Phone number"
+                  placeholder="+254..."
                   style={inputStyle}
                 />
               </div>
             </div>
 
-            <div>
-              <label style={labelStyle}>Email</label>
-              <input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="Email address"
-                style={inputStyle}
-              />
-            </div>
-
-            <div>
-              <label style={labelStyle}>Address</label>
-              <input
-                type="text"
-                value={address}
-                onChange={(e) => setAddress(e.target.value)}
-                placeholder="Physical address"
-                style={inputStyle}
-              />
-            </div>
-
-            <div>
-              <label style={labelStyle}>Notes</label>
-              <textarea
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                placeholder="Extra notes about this supplier"
-                rows={3}
-                style={{
-                  ...inputStyle,
-                  resize: "vertical",
-                  minHeight: 90,
-                }}
-              />
-            </div>
-
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 14 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 14 }}>
               <div>
-                <label style={labelStyle}>Payment Terms</label>
+                <label style={labelStyle}>Email</label>
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="procurement@example.com"
+                  style={inputStyle}
+                />
+              </div>
+
+              <div>
+                <label style={labelStyle}>Payment terms</label>
                 <input
                   type="text"
                   value={paymentTerms}
                   onChange={(e) => setPaymentTerms(e.target.value)}
-                  placeholder="e.g. Net 30"
+                  placeholder="Cash, Net 7, Net 30..."
+                  style={inputStyle}
+                />
+              </div>
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 14 }}>
+              <div>
+                <label style={labelStyle}>Address</label>
+                <input
+                  type="text"
+                  value={address}
+                  onChange={(e) => setAddress(e.target.value)}
+                  placeholder="Physical or delivery address"
                   style={inputStyle}
                 />
               </div>
 
               <div>
-                <label style={labelStyle}>Lead Time Days</label>
+                <label style={labelStyle}>Lead time days</label>
                 <input
                   type="number"
                   min={0}
@@ -274,14 +272,33 @@ export default function SupplierForm({ initialData = {}, onSave, onCancel, savin
               </div>
             </div>
 
+            <div>
+              <label style={labelStyle}>Notes</label>
+              <textarea
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                placeholder="Reorder pattern, negotiated terms, preferred contact time, delivery constraints..."
+                rows={4}
+                style={{
+                  ...inputStyle,
+                  resize: "vertical",
+                  minHeight: 100,
+                }}
+              />
+            </div>
+
             <label
               style={{
                 display: "flex",
                 alignItems: "center",
                 gap: 10,
+                border: `1px solid ${c.border}`,
+                background: c.bg,
+                borderRadius: 8,
+                padding: 12,
                 fontSize: 13,
                 color: c.text,
-                fontWeight: 600,
+                fontWeight: 800,
               }}
             >
               <input
@@ -289,7 +306,7 @@ export default function SupplierForm({ initialData = {}, onSave, onCancel, savin
                 checked={isActive}
                 onChange={(e) => setIsActive(e.target.checked)}
               />
-              Supplier is active
+              Supplier is active for procurement and reporting
             </label>
           </div>
 
@@ -301,6 +318,7 @@ export default function SupplierForm({ initialData = {}, onSave, onCancel, savin
               marginTop: 22,
               paddingTop: 18,
               borderTop: `1px solid ${c.border}`,
+              flexWrap: "wrap",
             }}
           >
             <button
@@ -311,10 +329,10 @@ export default function SupplierForm({ initialData = {}, onSave, onCancel, savin
                 padding: "10px 14px",
                 borderRadius: 8,
                 border: `1px solid ${c.border}`,
-                background: c.card,
+                background: c.bg,
                 color: c.text,
                 cursor: saving ? "not-allowed" : "pointer",
-                fontWeight: 600,
+                fontWeight: 800,
               }}
             >
               Cancel
@@ -324,17 +342,17 @@ export default function SupplierForm({ initialData = {}, onSave, onCancel, savin
               type="submit"
               disabled={saving}
               style={{
-                padding: "10px 14px",
+                padding: "10px 16px",
                 borderRadius: 8,
                 border: "none",
-                background: "#667eea",
+                background: "#0f766e",
                 color: "#fff",
                 cursor: saving ? "not-allowed" : "pointer",
-                fontWeight: 700,
-                opacity: saving ? 0.7 : 1,
+                fontWeight: 900,
+                opacity: saving ? 0.72 : 1,
               }}
             >
-              {saving ? "Saving..." : initialData?.id ? "Update Supplier" : "Save Supplier"}
+              {saving ? "Saving..." : initialData?.id ? "Update supplier" : "Save supplier"}
             </button>
           </div>
         </form>
@@ -342,4 +360,3 @@ export default function SupplierForm({ initialData = {}, onSave, onCancel, savin
     </div>
   );
 }
-
