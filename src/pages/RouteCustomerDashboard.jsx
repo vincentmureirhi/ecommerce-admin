@@ -72,12 +72,24 @@ export default function RouteCustomerDashboard() {
 
   const routeCustomerToken = routeAuth?.routeCustomerToken || null;
   const routeCustomerUser = routeAuth?.routeCustomerUser || null;
+  const setRouteCustomerAccount =
+    typeof routeAuth?.setRouteCustomerAccount === "function"
+      ? routeAuth.setRouteCustomerAccount
+      : () => {};
   const routeLogout =
     typeof routeAuth?.logout === "function" ? routeAuth.logout : () => {};
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [dashboard, setDashboard] = useState(null);
+  const [passwordForm, setPasswordForm] = useState({
+    current_password: "",
+    new_password: "",
+    confirm_password: "",
+  });
+  const [passwordSaving, setPasswordSaving] = useState(false);
+  const [passwordMessage, setPasswordMessage] = useState("");
+  const [passwordError, setPasswordError] = useState("");
 
   const colors = useMemo(
     () => ({
@@ -140,6 +152,72 @@ export default function RouteCustomerDashboard() {
   function handleLogout() {
     routeLogout();
     window.location.href = "/route-login";
+  }
+
+  async function handlePasswordSubmit(event) {
+    event.preventDefault();
+    if (passwordSaving) return;
+
+    setPasswordError("");
+    setPasswordMessage("");
+
+    if (!passwordForm.current_password || !passwordForm.new_password || !passwordForm.confirm_password) {
+      setPasswordError("Current password, new password, and confirmation are required.");
+      return;
+    }
+
+    if (passwordForm.new_password !== passwordForm.confirm_password) {
+      setPasswordError("New password and confirmation do not match.");
+      return;
+    }
+
+    if (passwordForm.new_password.length < 8) {
+      setPasswordError("New password must be at least 8 characters.");
+      return;
+    }
+
+    try {
+      setPasswordSaving(true);
+      const response = await fetch(`${API_BASE}/route-customer-portal/auth/change-password`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${routeCustomerToken}`,
+        },
+        body: JSON.stringify(passwordForm),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok || data?.success === false) {
+        throw new Error(data?.message || data?.error || "Failed to change password.");
+      }
+
+      const nextAccount = {
+        ...(dashboard?.account || {}),
+        must_change_password: false,
+      };
+
+      setDashboard((current) =>
+        current
+          ? {
+              ...current,
+              account: nextAccount,
+            }
+          : current
+      );
+      setRouteCustomerAccount(nextAccount);
+      setPasswordForm({
+        current_password: "",
+        new_password: "",
+        confirm_password: "",
+      });
+      setPasswordMessage("Password changed successfully.");
+    } catch (err) {
+      setPasswordError(err?.message || "Failed to change password.");
+    } finally {
+      setPasswordSaving(false);
+    }
   }
 
   if (loading) {
@@ -338,6 +416,142 @@ export default function RouteCustomerDashboard() {
           >
             Your account still requires a password change after first login.
           </div>
+        ) : null}
+
+        {account?.must_change_password ? (
+          <form
+            onSubmit={handlePasswordSubmit}
+            style={{
+              marginBottom: 18,
+              background: colors.card,
+              border: `1px solid ${colors.border}`,
+              borderRadius: 18,
+              padding: 18,
+            }}
+          >
+            <div
+              style={{
+                fontSize: 18,
+                fontWeight: 900,
+                color: colors.text,
+                marginBottom: 6,
+              }}
+            >
+              Set your own password
+            </div>
+            <div
+              style={{
+                color: colors.textMuted,
+                fontSize: 14,
+                marginBottom: 14,
+              }}
+            >
+              Use the temporary password as your current password, then choose a private password.
+            </div>
+
+            {(passwordError || passwordMessage) ? (
+              <div
+                style={{
+                  marginBottom: 14,
+                  padding: "10px 12px",
+                  borderRadius: 12,
+                  background: passwordError ? colors.dangerBg : isDark ? "rgba(20,83,45,0.22)" : "#f0fdf4",
+                  border: `1px solid ${passwordError ? colors.dangerBorder : isDark ? "rgba(34,197,94,0.4)" : "#bbf7d0"}`,
+                  color: passwordError ? colors.dangerText : isDark ? "#86efac" : "#166534",
+                  fontWeight: 700,
+                }}
+              >
+                {passwordError || passwordMessage}
+              </div>
+            ) : null}
+
+            <div
+              style={{
+                display: "grid",
+                gap: 12,
+                gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                marginBottom: 14,
+              }}
+            >
+              <input
+                type="password"
+                value={passwordForm.current_password}
+                onChange={(event) =>
+                  setPasswordForm((current) => ({
+                    ...current,
+                    current_password: event.target.value,
+                  }))
+                }
+                placeholder="Temporary password"
+                autoComplete="current-password"
+                style={{
+                  padding: "12px 14px",
+                  borderRadius: 12,
+                  border: `1px solid ${colors.border}`,
+                  background: colors.topbar,
+                  color: colors.text,
+                  outline: "none",
+                }}
+              />
+              <input
+                type="password"
+                value={passwordForm.new_password}
+                onChange={(event) =>
+                  setPasswordForm((current) => ({
+                    ...current,
+                    new_password: event.target.value,
+                  }))
+                }
+                placeholder="New password"
+                autoComplete="new-password"
+                style={{
+                  padding: "12px 14px",
+                  borderRadius: 12,
+                  border: `1px solid ${colors.border}`,
+                  background: colors.topbar,
+                  color: colors.text,
+                  outline: "none",
+                }}
+              />
+              <input
+                type="password"
+                value={passwordForm.confirm_password}
+                onChange={(event) =>
+                  setPasswordForm((current) => ({
+                    ...current,
+                    confirm_password: event.target.value,
+                  }))
+                }
+                placeholder="Confirm new password"
+                autoComplete="new-password"
+                style={{
+                  padding: "12px 14px",
+                  borderRadius: 12,
+                  border: `1px solid ${colors.border}`,
+                  background: colors.topbar,
+                  color: colors.text,
+                  outline: "none",
+                }}
+              />
+            </div>
+
+            <button
+              type="submit"
+              disabled={passwordSaving}
+              style={{
+                padding: "12px 16px",
+                borderRadius: 14,
+                border: "none",
+                background: colors.accent,
+                color: "#fff",
+                fontWeight: 900,
+                cursor: passwordSaving ? "wait" : "pointer",
+                opacity: passwordSaving ? 0.75 : 1,
+              }}
+            >
+              {passwordSaving ? "Changing password..." : "Change password"}
+            </button>
+          </form>
         ) : null}
 
         <div

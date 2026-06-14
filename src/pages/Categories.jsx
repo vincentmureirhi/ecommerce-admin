@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useTheme } from "../context/ThemeContext";
 import client from "../api/client";
+import { uploadAdminImage } from "../utils/imageUpload";
 
 const API_BASE_URL =
   import.meta.env.VITE_API_URL || "https://ecommerce-backend-9s3f.onrender.com/api";
@@ -173,27 +174,11 @@ export default function Categories() {
     setErr("");
 
     try {
-      const form = new FormData();
-      form.append("image", file);
-
-      const res = await client.post("/uploads", form, {
-        headers: { "Content-Type": "multipart/form-data" },
-      });
-
-      const imageUrl =
-        res.data?.data?.image_url ||
-        res.data?.data?.url ||
-        res.data?.image_url ||
-        res.data?.url ||
-        res.data?.path;
-
-      if (!imageUrl) {
-        throw new Error("Upload completed but no image URL was returned");
-      }
+      const imageUrl = await uploadAdminImage(file, "ecommerce/categories");
 
       setFormData((prev) => ({
         ...prev,
-        image_url: resolveImageUrl(imageUrl),
+        image_url: imageUrl,
       }));
       flashMessage("Image uploaded successfully");
     } catch (error) {

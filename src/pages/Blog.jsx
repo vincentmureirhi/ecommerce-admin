@@ -7,7 +7,7 @@ import {
   updateBlogPost,
   deleteBlogPost,
 } from "../api/blog";
-import client from "../api/client";
+import { uploadAdminImage } from "../utils/imageUpload";
 
 const EMPTY_FORM = {
   title: "",
@@ -50,16 +50,8 @@ function statusBadge(status, isDark) {
   };
 }
 
-// Upload an image file to the backend and return its URL
 async function uploadImage(file) {
-  const formData = new FormData();
-  formData.append("image", file);
-  const res = await client.post("/uploads", formData, {
-    headers: { "Content-Type": "multipart/form-data" },
-  });
-  const imageUrl = res.data?.data?.image_url || res.data?.image_url;
-  if (!imageUrl) throw new Error("Upload failed — no image_url returned");
-  return imageUrl;
+  return uploadAdminImage(file, "ecommerce/blog");
 }
 
 export default function Blog() {
@@ -142,10 +134,7 @@ export default function Blog() {
 
     try {
       const url = await uploadImage(file);
-      const backendBase = (import.meta.env.VITE_API_URL || "https://ecommerce-backend-9s3f.onrender.com/api").replace(/\/api$/, "");
-      const fullUrl = url.startsWith("http") ? url : `${backendBase}${url}`;
-
-      setForm((f) => ({ ...f, featured_image_url: fullUrl }));
+      setForm((f) => ({ ...f, featured_image_url: url }));
     } catch (e) {
       setFormErr(e?.response?.data?.message || e?.message || "Image upload failed");
     } finally {
