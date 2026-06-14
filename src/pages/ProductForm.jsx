@@ -14,6 +14,20 @@ function toSafeNumber(value, fallback = 0) {
   return Number.isFinite(num) ? num : fallback;
 }
 
+function normalizeMoneyInput(value) {
+  const text = String(value || "").replace(/[^\d.]/g, "");
+  const [whole, ...decimalParts] = text.split(".");
+  const decimal = decimalParts.join("");
+  return decimalParts.length > 0 ? `${whole}.${decimal.slice(0, 2)}` : whole;
+}
+
+function moneyPayload(value, fallback = null) {
+  const text = String(value ?? "").trim();
+  if (!text) return fallback;
+  const parsed = Number(text);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
 function PageCard({ title, subtitle, children, c }) {
   return (
     <section
@@ -253,6 +267,10 @@ export default function ProductForm() {
     }));
   }
 
+  function updateMoneyField(key, value) {
+    updateField(key, normalizeMoneyInput(value));
+  }
+
   function updateStockStatus(value) {
     setForm((prev) => ({
       ...prev,
@@ -282,7 +300,7 @@ export default function ProductForm() {
       return false;
     }
 
-    if (!form.retail_price || Number(form.retail_price) <= 0) {
+    if (!form.requires_manual_price && (!form.retail_price || Number(form.retail_price) <= 0)) {
       setErr("Retail price must be greater than 0.");
       return false;
     }
@@ -538,13 +556,13 @@ export default function ProductForm() {
         barcode: form.barcode.trim() || null,
         category_id: parseInt(form.category_id, 10),
         department_id: form.department_id ? parseInt(form.department_id, 10) : null,
-        retail_price: Number(form.retail_price),
-        wholesale_price: form.wholesale_price ? Number(form.wholesale_price) : null,
+        retail_price: form.requires_manual_price ? null : moneyPayload(form.retail_price, null),
+        wholesale_price: form.requires_manual_price ? null : moneyPayload(form.wholesale_price, null),
         min_qty_wholesale: Number(form.min_qty_wholesale) || 10,
         min_order_qty: Math.max(1, Number(form.min_order_qty) || 1),
         order_qty_step: Math.max(1, Number(form.order_qty_step) || 1),
         selling_unit_label: form.selling_unit_label.trim() || "piece",
-        cost_price: form.cost_price ? Number(form.cost_price) : null,
+        cost_price: moneyPayload(form.cost_price, null),
         reorder_level: Math.max(0, Number(form.reorder_level) || 10),
         current_stock: stockStatus === "out_of_stock" ? 0 : Math.max(0, Number(form.current_stock) || 0),
         stock_status_override: stockStatus,
@@ -770,11 +788,10 @@ export default function ProductForm() {
             <FormGrid>
               <Field label="Cost price" c={c}>
                 <input
-                  type="number"
-                  step="0.01"
-                  min="0"
+                  type="text"
+                  inputMode="decimal"
                   value={form.cost_price}
-                  onChange={(e) => updateField("cost_price", e.target.value)}
+                  onChange={(e) => updateMoneyField("cost_price", e.target.value)}
                   placeholder="0.00"
                   style={inputStyle(c, isDark)}
                 />
@@ -782,24 +799,24 @@ export default function ProductForm() {
 
               <Field label="Retail price" required c={c}>
                 <input
-                  type="number"
-                  step="0.01"
-                  min="0.01"
+                  type="text"
+                  inputMode="decimal"
                   value={form.retail_price}
-                  onChange={(e) => updateField("retail_price", e.target.value)}
+                  onChange={(e) => updateMoneyField("retail_price", e.target.value)}
                   placeholder="0.00"
+                  disabled={form.requires_manual_price}
                   style={inputStyle(c, isDark)}
                 />
               </Field>
 
               <Field label="Wholesale price" c={c}>
                 <input
-                  type="number"
-                  step="0.01"
-                  min="0"
+                  type="text"
+                  inputMode="decimal"
                   value={form.wholesale_price}
-                  onChange={(e) => updateField("wholesale_price", e.target.value)}
+                  onChange={(e) => updateMoneyField("wholesale_price", e.target.value)}
                   placeholder="0.00"
+                  disabled={form.requires_manual_price}
                   style={inputStyle(c, isDark)}
                 />
               </Field>
@@ -1134,7 +1151,7 @@ export default function ProductForm() {
 
           <PageCard
             title="Options"
-            subtitle="Toggle the product status and pricing rules clearly."
+            subtitle="Keep these switches for special cases only. Most products should use pricing rules."
             c={c}
           >
             <FormGrid>
@@ -1155,39 +1172,49 @@ export default function ProductForm() {
                 Active product
               </label>
 
-              <label
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 10,
-                  color: c.text,
-                  fontWeight: 700,
-                }}
-              >
-                <input
-                  type="checkbox"
-                  checked={form.is_combo_eligible}
-                  onChange={(e) => updateField("is_combo_eligible", e.target.checked)}
-                />
-                Eligible for combo pricing
-              </label>
+              <div>
+                <label
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 10,
+                    color: c.text,
+                    fontWeight: 700,
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={form.is_combo_eligible}
+                    onChange={(e) => updateField("is_combo_eligible", e.target.checked)}
+                  />
+                  Legacy category bundle cap
+                </label>
+                <div style={{ marginTop: 6, fontSize: 12, color: c.muted, lineHeight: 1.5 }}>
+                  Use only for old category combo offers. For braids or mix-and-match wholesale, use Pricing Groups and Pricing Rules.
+                </div>
+              </div>
 
-              <label
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 10,
-                  color: c.text,
-                  fontWeight: 700,
-                }}
-              >
-                <input
-                  type="checkbox"
-                  checked={form.requires_manual_price}
-                  onChange={(e) => updateField("requires_manual_price", e.target.checked)}
-                />
-                Requires manual price approval
-              </label>
+              <div>
+                <label
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 10,
+                    color: c.text,
+                    fontWeight: 700,
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={form.requires_manual_price}
+                    onChange={(e) => updateField("requires_manual_price", e.target.checked)}
+                  />
+                  Manual price only
+                </label>
+                <div style={{ marginTop: 6, fontSize: 12, color: c.muted, lineHeight: 1.5 }}>
+                  Checkout will not auto-price this item. Use for quotations or special products that need an admin-entered price.
+                </div>
+              </div>
             </FormGrid>
           </PageCard>
 

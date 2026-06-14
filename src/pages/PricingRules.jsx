@@ -162,6 +162,53 @@ function badge(active) {
 
 // ─── Tier Manager Sub-component ───────────────────────────────────────────────
 
+function PricingUseGuide({ c, isDark }) {
+  const cards = [
+    {
+      title: "Braids mix 12+",
+      body: "Use GROUP_THRESHOLD. Put every braid type in one pricing group, set threshold 12, then each braid can keep its own wholesale price.",
+    },
+    {
+      title: "Brazilian wool",
+      body: "Use SKU_TIERED for one wool item, or GROUP_TIERED if wool SKUs can be mixed. Add tiers 1-5 at KES 100 and 6+ at KES 50.",
+    },
+    {
+      title: "Manual price",
+      body: "Use only for quotation items. Normal products should be priced by fixed, threshold, or tiered rules.",
+    },
+  ];
+
+  return (
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+        gap: 12,
+        marginBottom: 18,
+      }}
+    >
+      {cards.map((card) => (
+        <div
+          key={card.title}
+          style={{
+            background: isDark ? "rgba(255,255,255,0.04)" : "#fff",
+            border: `1px solid ${c.border}`,
+            borderRadius: 12,
+            padding: 14,
+          }}
+        >
+          <div style={{ fontSize: 13, fontWeight: 900, color: c.text, marginBottom: 6 }}>
+            {card.title}
+          </div>
+          <div style={{ fontSize: 12, color: c.textMuted, lineHeight: 1.55 }}>
+            {card.body}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function TierManager({ rule, c, isDark }) {
   const [tiers, setTiers] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -207,7 +254,7 @@ function TierManager({ rule, c, isDark }) {
     const price = parseFloat(form.unit_price);
 
     if (!Number.isFinite(min) || min < 1) return setErr("Min quantity must be at least 1.");
-    if (max !== null && max <= min) return setErr("Max quantity must be greater than min quantity.");
+    if (max !== null && max < min) return setErr("Max quantity must be greater than or equal to min quantity.");
     if (!Number.isFinite(price) || price <= 0) return setErr("Unit price must be greater than 0.");
 
     // Client-side overlap check
@@ -602,6 +649,8 @@ export default function PricingRules() {
           + New Rule
         </button>
       </div>
+
+      <PricingUseGuide c={c} isDark={isDark} />
 
       {err && (
         <div style={{ background: isDark ? "rgba(220,53,69,0.1)" : "#fee2e2", color: "#b91c1c", padding: 12, borderRadius: 6, marginBottom: 20, border: "1px solid #fecaca", fontSize: 13 }}>
