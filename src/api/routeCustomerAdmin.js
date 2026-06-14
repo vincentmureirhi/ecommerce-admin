@@ -95,6 +95,20 @@ export async function saveRouteCustomerAccess(customerId, payload) {
   });
 }
 
+export async function listCreditLimitRequests(status = "pending") {
+  const query = status ? `?status=${encodeURIComponent(status)}` : "";
+  return request(`/route-customer-portal/admin/credit-limit-requests${query}`, {
+    method: "GET",
+  });
+}
+
+export async function reviewCreditLimitRequest(requestId, payload) {
+  return request(`/route-customer-portal/admin/credit-limit-requests/${requestId}/review`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
 export async function listRouteCustomerApplicationFiles(applicationId) {
   return request(`/route-customer-portal/applications/${applicationId}/files`, {
     method: "GET",

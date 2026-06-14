@@ -1,7 +1,9 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
+  listCreditLimitRequests,
   listAdminRouteCustomers,
+  reviewCreditLimitRequest,
   saveRouteCustomerAccess,
 } from "../api/routeCustomerAdmin";
 import { useTheme } from "../context/ThemeContext";
@@ -138,11 +140,13 @@ export default function RouteCustomerAccess() {
   };
 
   const [rows, setRows] = useState([]);
+  const [creditRequests, setCreditRequests] = useState([]);
   const [loading, setLoading] = useState(true);
   const [pageError, setPageError] = useState("");
   const [pageSuccess, setPageSuccess] = useState("");
   const [openId, setOpenId] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [reviewingRequestId, setReviewingRequestId] = useState(null);
   const [forms, setForms] = useState({});
 
   async function loadData() {
@@ -150,9 +154,14 @@ export default function RouteCustomerAccess() {
     setPageError("");
 
     try {
-      const res = await listAdminRouteCustomers();
-      const customers = res?.data?.customers || [];
+      const [customerRes, requestRes] = await Promise.all([
+        listAdminRouteCustomers(),
+        listCreditLimitRequests("pending"),
+      ]);
+      const customers = customerRes?.data?.customers || [];
+      const requests = requestRes?.data?.requests || [];
       setRows(customers);
+      setCreditRequests(requests);
     } catch (err) {
       setPageError(
         err?.response?.data?.message ||
@@ -246,6 +255,41 @@ export default function RouteCustomerAccess() {
     }
   }
 
+  async function handleReviewCreditRequest(request, decision) {
+    if (!request?.id || reviewingRequestId) return;
+
+    const notes =
+      decision === "approved"
+        ? "Approved from route customer access screen"
+        : "Rejected from route customer access screen";
+
+    setReviewingRequestId(request.id);
+    setPageError("");
+    setPageSuccess("");
+
+    try {
+      await reviewCreditLimitRequest(request.id, {
+        status: decision,
+        decision_notes: notes,
+      });
+      setPageSuccess(
+        decision === "approved"
+          ? `Credit increase approved for ${request.customer_name}.`
+          : `Credit increase rejected for ${request.customer_name}.`
+      );
+      await loadData();
+    } catch (err) {
+      setPageError(
+        err?.response?.data?.message ||
+          err?.response?.data?.error ||
+          err?.message ||
+          "Failed to review credit request"
+      );
+    } finally {
+      setReviewingRequestId(null);
+    }
+  }
+
   const sortedRows = useMemo(() => {
     if (!focusedCustomerId) return rows;
     const target = Number(focusedCustomerId);
@@ -261,9 +305,10 @@ export default function RouteCustomerAccess() {
     const withAccount = rows.filter((r) => !!r.username).length;
     const withoutAccount = rows.filter((r) => !r.username).length;
     const withCredit = rows.filter((r) => Number(r.credit_limit || 0) > 0).length;
+    const pendingCreditRequests = creditRequests.length;
 
-    return { total, withAccount, withoutAccount, withCredit };
-  }, [rows]);
+    return { total, withAccount, withoutAccount, withCredit, pendingCreditRequests };
+  }, [creditRequests.length, rows]);
 
   const labelStyle = {
     display: "block",
@@ -440,6 +485,7 @@ export default function RouteCustomerAccess() {
         <SummaryCard title="With Portal Access" value={summary.withAccount} subtitle="Already assigned usernames" colors={colors} />
         <SummaryCard title="Without Portal Access" value={summary.withoutAccount} subtitle="Need username and password" colors={colors} />
         <SummaryCard title="With Credit Set" value={summary.withCredit} subtitle="Credit limit greater than zero" colors={colors} />
+        <SummaryCard title="Pending Increases" value={summary.pendingCreditRequests} subtitle="Rep requests waiting for admin review" colors={colors} />
       </div>
 
       {(pageError || pageSuccess) && (
@@ -455,6 +501,137 @@ export default function RouteCustomerAccess() {
           }}
         >
           {pageError || pageSuccess}
+        </div>
+      )}
+
+      {creditRequests.length > 0 && (
+        <div
+          style={{
+            marginBottom: 20,
+            background: colors.card,
+            border: `1px solid ${colors.border}`,
+            borderRadius: 18,
+            padding: 20,
+            boxShadow: "0 8px 24px rgba(15,23,42,0.04)",
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              gap: 12,
+              flexWrap: "wrap",
+              marginBottom: 14,
+            }}
+          >
+            <div>
+              <div style={{ color: colors.text, fontSize: 20, fontWeight: 900 }}>
+                Pending credit limit requests
+              </div>
+              <div style={{ marginTop: 4, color: colors.textMuted, fontSize: 14 }}>
+                Approve to keep the higher limit, or reject to restore the previous limit.
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={loadData}
+              style={{
+                padding: "10px 14px",
+                background: colors.card,
+                color: colors.text,
+                border: `1px solid ${colors.border}`,
+                borderRadius: 12,
+                cursor: "pointer",
+                fontWeight: 800,
+              }}
+            >
+              Refresh requests
+            </button>
+          </div>
+
+          <div style={{ display: "grid", gap: 12 }}>
+            {creditRequests.map((request) => (
+              <div
+                key={request.id}
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "minmax(0, 1.5fr) minmax(180px, 0.9fr) auto",
+                  gap: 14,
+                  alignItems: "center",
+                  border: `1px solid ${colors.border}`,
+                  borderRadius: 14,
+                  padding: 14,
+                }}
+              >
+                <div>
+                  <div style={{ color: colors.text, fontWeight: 900 }}>
+                    {request.customer_name}
+                  </div>
+                  <div style={{ color: colors.textMuted, fontSize: 13, marginTop: 4 }}>
+                    {request.customer_phone || "No phone"} · {request.region_name || "No region"} · {request.location_name || "No location"}
+                  </div>
+                  <div style={{ color: colors.textMuted, fontSize: 13, marginTop: 4 }}>
+                    Rep: {request.sales_rep_name || "Unknown"} · Order: {request.order_number || "Not linked yet"}
+                  </div>
+                  {request.reason ? (
+                    <div style={{ color: colors.textMuted, fontSize: 13, marginTop: 6 }}>
+                      Reason: {request.reason}
+                    </div>
+                  ) : null}
+                </div>
+
+                <div style={{ display: "grid", gap: 4, fontSize: 13 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
+                    <span style={{ color: colors.textMuted }}>Old limit</span>
+                    <strong style={{ color: colors.text }}>{money(request.current_credit_limit)}</strong>
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
+                    <span style={{ color: colors.textMuted }}>Requested</span>
+                    <strong style={{ color: colors.text }}>{money(request.requested_credit_limit)}</strong>
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
+                    <span style={{ color: colors.textMuted }}>Order</span>
+                    <strong style={{ color: colors.text }}>{money(request.order_amount)}</strong>
+                  </div>
+                </div>
+
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
+                  <button
+                    type="button"
+                    disabled={reviewingRequestId === request.id}
+                    onClick={() => handleReviewCreditRequest(request, "approved")}
+                    style={{
+                      padding: "10px 14px",
+                      background: "#16a34a",
+                      color: "#fff",
+                      border: "none",
+                      borderRadius: 12,
+                      cursor: reviewingRequestId === request.id ? "wait" : "pointer",
+                      fontWeight: 900,
+                    }}
+                  >
+                    Approve
+                  </button>
+                  <button
+                    type="button"
+                    disabled={reviewingRequestId === request.id}
+                    onClick={() => handleReviewCreditRequest(request, "rejected")}
+                    style={{
+                      padding: "10px 14px",
+                      background: colors.dangerBg,
+                      color: colors.dangerText,
+                      border: `1px solid ${colors.dangerBorder}`,
+                      borderRadius: 12,
+                      cursor: reviewingRequestId === request.id ? "wait" : "pointer",
+                      fontWeight: 900,
+                    }}
+                  >
+                    Reject
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
@@ -625,7 +802,7 @@ export default function RouteCustomerAccess() {
 
                       <div>
                         <label style={{ display: "block", marginBottom: 6, fontWeight: 700, fontSize: 13, color: colors.text }}>
-                          Temporary Password {hasAccount ? "(optional reset)" : "*"}
+                          Temporary Password {hasAccount ? "(optional reset)" : "(auto if blank)"}
                         </label>
                         <input
                           type="text"
@@ -636,7 +813,7 @@ export default function RouteCustomerAccess() {
                           placeholder={
                             hasAccount
                               ? "Leave blank to keep current password"
-                              : "Enter temporary password"
+                              : "Leave blank to auto-generate"
                           }
                           style={inputStyle}
                         />
