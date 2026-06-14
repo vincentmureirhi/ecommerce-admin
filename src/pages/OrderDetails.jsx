@@ -12,6 +12,71 @@ function money(value) {
   })}`;
 }
 
+const BUSINESS_TIME_ZONE = "Africa/Nairobi";
+
+const ROUTE_STATUS_FLOW = [
+  {
+    value: "pending",
+    label: "Captured",
+    icon: "📝",
+    detail: "Sales rep captured the route customer order.",
+    nextStatus: "processing",
+    nextAction: "Send to packing and route planning",
+  },
+  {
+    value: "processing",
+    label: "Packing / Planning",
+    icon: "📦",
+    detail: "Warehouse is preparing the goods for route delivery.",
+    nextStatus: "dispatched",
+    nextAction: "Release to delivery team",
+  },
+  {
+    value: "dispatched",
+    label: "Out With Delivery Team",
+    icon: "🚚",
+    detail: "Goods are on the route for delivery and collection.",
+    nextStatus: "completed",
+    nextAction: "Confirm delivery and settlement",
+  },
+  {
+    value: "completed",
+    label: "Delivered",
+    icon: "✅",
+    detail: "Goods were delivered to the route customer.",
+    nextStatus: null,
+    nextAction: "Route order completed",
+  },
+  {
+    value: "cancelled",
+    label: "Cancelled",
+    icon: "❌",
+    detail: "Route order was cancelled.",
+    nextStatus: null,
+    nextAction: "No further action",
+  },
+];
+
+function formatDateTime(value) {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "—";
+
+  return date.toLocaleString("en-KE", {
+    timeZone: BUSINESS_TIME_ZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function getRouteStatusMeta(status) {
+  const value = String(status || "pending").toLowerCase();
+  return ROUTE_STATUS_FLOW.find((step) => step.value === value) || ROUTE_STATUS_FLOW[0];
+}
+
 export default function OrderDetails() {
   const { id } = useParams();
   const nav = useNavigate();
@@ -185,9 +250,20 @@ export default function OrderDetails() {
     order.order_type === "route"
       ? order.payment_state || "unpaid"
       : order.payment_status || "pending";
+  const isRouteOrder =
+    order.order_type === "route" ||
+    order.order_workflow_type === "route_sales_rep_capture" ||
+    order.order_workflow_type === "route_self_service";
   const currentStatusMeta = getOrderStatusMeta(order.order_status);
   const selectedStatusMeta = getOrderStatusMeta(orderStatus);
   const nextStatusMeta = getOrderStatusMeta(currentStatusMeta.nextStatus);
+  const currentRouteStatusMeta = getRouteStatusMeta(order.order_status);
+  const selectedRouteStatusMeta = getRouteStatusMeta(orderStatus);
+  const nextRouteStatusMeta = getRouteStatusMeta(currentRouteStatusMeta.nextStatus);
+  const visibleStatusMeta = isRouteOrder ? currentRouteStatusMeta : currentStatusMeta;
+  const visibleSelectedStatusMeta = isRouteOrder ? selectedRouteStatusMeta : selectedStatusMeta;
+  const visibleNextStatusMeta = isRouteOrder ? nextRouteStatusMeta : nextStatusMeta;
+  const visibleStatusFlow = isRouteOrder ? ROUTE_STATUS_FLOW : ORDER_STATUS_FLOW;
   const hasOrderStatusChanges = selectedStatusMeta.value !== currentStatusMeta.value;
 
   return (
@@ -207,7 +283,9 @@ export default function OrderDetails() {
             🛒 {order.order_number}
           </h1>
           <p style={{ margin: 0, color: c.textMuted, fontSize: 13 }}>
-            Order details, clear fulfillment status flow, printing acknowledgment, and settlement tracking
+            {isRouteOrder
+              ? "Route customer delivery, dispatch readiness, and pay-on-delivery settlement"
+              : "Order details, fulfillment status, printing acknowledgment, and settlement tracking"}
           </p>
         </div>
 
@@ -310,13 +388,13 @@ export default function OrderDetails() {
             <div style={label}>Printed / Acknowledged</div>
             <div style={value}>
               {order.is_printed ? "✅ Acknowledged after print" : "🕓 Not acknowledged yet"}
-              {order.printed_at ? ` · ${new Date(order.printed_at).toLocaleString()}` : ""}
+              {order.printed_at ? ` - ${formatDateTime(order.printed_at)}` : ""}
             </div>
           </div>
 
           <div style={{ marginBottom: 12 }}>
             <div style={label}>Created</div>
-            <div style={value}>{new Date(order.created_at).toLocaleString()}</div>
+            <div style={value}>{formatDateTime(order.created_at)}</div>
           </div>
 
           <div>
@@ -330,7 +408,7 @@ export default function OrderDetails() {
         <div style={{ display: "grid", gap: 20 }}>
           <div style={card}>
             <h3 style={{ marginTop: 0, fontSize: 14, fontWeight: 700, marginBottom: 14, color: c.text }}>
-              📦 Order Status
+              {isRouteOrder ? "🚚 Route Delivery" : "📦 Order Status"}
             </h3>
 
             <div
@@ -342,22 +420,35 @@ export default function OrderDetails() {
                 border: `1px solid ${isDark ? "rgba(102, 126, 234, 0.25)" : "#c7d2fe"}`,
               }}
             >
-              <div style={{ ...label, marginBottom: 8 }}>Current State</div>
+              <div style={{ ...label, marginBottom: 8 }}>{isRouteOrder ? "Delivery Stage" : "Current State"}</div>
               <div style={{ ...value, marginBottom: 6 }}>
-                {currentStatusMeta.icon} {currentStatusMeta.label}
+                {visibleStatusMeta.icon} {visibleStatusMeta.label}
               </div>
-              <div style={{ fontSize: 12, color: c.textMuted }}>
-                Customer tracking label: <strong>{currentStatusMeta.trackingLabel}</strong>
-              </div>
-              <div style={{ fontSize: 12, color: c.textMuted, marginTop: 4 }}>
-                {currentStatusMeta.nextStatus
-                  ? `Next expected action: ${currentStatusMeta.nextAction}`
-                  : "Lifecycle complete for this order."}
-              </div>
+              {isRouteOrder ? (
+                <>
+                  <div style={{ fontSize: 12, color: c.textMuted }}>{visibleStatusMeta.detail}</div>
+                  <div style={{ fontSize: 12, color: c.textMuted, marginTop: 4 }}>
+                    {visibleStatusMeta.nextStatus
+                      ? `Next dispatch action: ${visibleStatusMeta.nextAction}`
+                      : "Route delivery is complete."}
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div style={{ fontSize: 12, color: c.textMuted }}>
+                    Customer tracking label: <strong>{currentStatusMeta.trackingLabel}</strong>
+                  </div>
+                  <div style={{ fontSize: 12, color: c.textMuted, marginTop: 4 }}>
+                    {currentStatusMeta.nextStatus
+                      ? `Next expected action: ${currentStatusMeta.nextAction}`
+                      : "Lifecycle complete for this order."}
+                  </div>
+                </>
+              )}
             </div>
 
             <div style={{ marginBottom: 12, display: "flex", flexWrap: "wrap", gap: 6 }}>
-              {ORDER_STATUS_FLOW.map((step) => {
+              {visibleStatusFlow.map((step) => {
                 const isCurrent = step.value === String(order.order_status || "").toLowerCase();
                 return (
                   <span
@@ -385,21 +476,23 @@ export default function OrderDetails() {
             </div>
 
             <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: c.textMuted, marginBottom: 6 }}>
-              Change Order Status
+              {isRouteOrder ? "Update Route Stage" : "Change Order Status"}
             </label>
             <select
               value={orderStatus}
               onChange={(e) => setOrderStatus(e.target.value)}
               style={inputStyle(c)}
             >
-              {ORDER_STATUS_FLOW.map((step) => (
+              {visibleStatusFlow.map((step) => (
                 <option key={step.value} value={step.value}>
                   {step.icon} {step.label}
                 </option>
               ))}
             </select>
             <div style={{ marginTop: 8, fontSize: 12, color: c.textMuted }}>
-              Selected tracking label: {selectedStatusMeta.trackingLabel}
+              {isRouteOrder
+                ? `Selected route stage: ${visibleSelectedStatusMeta.label}`
+                : `Selected tracking label: ${selectedStatusMeta.trackingLabel}`}
             </div>
 
             <button
@@ -422,9 +515,9 @@ export default function OrderDetails() {
               {savingOrderStatus ? "Saving..." : hasOrderStatusChanges ? "Save Status Update" : "Status Up To Date"}
             </button>
 
-            {currentStatusMeta.nextStatus ? (
+            {visibleStatusMeta.nextStatus ? (
               <button
-                onClick={() => persistOrderStatus(currentStatusMeta.nextStatus)}
+                onClick={() => persistOrderStatus(visibleStatusMeta.nextStatus)}
                 disabled={savingOrderStatus}
                 style={{
                   width: "100%",
@@ -440,23 +533,28 @@ export default function OrderDetails() {
                   opacity: savingOrderStatus ? 0.7 : 1,
                 }}
               >
-                {savingOrderStatus ? "Updating..." : `Move to ${nextStatusMeta.label}`}
+                {savingOrderStatus ? "Updating..." : `Move to ${visibleNextStatusMeta.label}`}
               </button>
             ) : null}
           </div>
 
           <div style={card}>
             <h3 style={{ marginTop: 0, fontSize: 14, fontWeight: 700, marginBottom: 10, color: c.text }}>
-              💳 Settlement Tracking
+              {isRouteOrder ? "💳 Delivery Payment / Credit" : "💳 Settlement Tracking"}
             </h3>
 
             <div style={{ marginBottom: 12 }}>
-              <div style={label}>Current Settlement State</div>
+              <div style={label}>{isRouteOrder ? "Pay-On-Delivery State" : "Current Settlement State"}</div>
               <div style={value}>{settlementBadge}</div>
+              {isRouteOrder ? (
+                <div style={{ marginTop: 6, fontSize: 12, color: c.textMuted }}>
+                  Route customers pay when goods arrive unless approved credit terms apply.
+                </div>
+              ) : null}
             </div>
 
             <div style={{ marginBottom: 12 }}>
-              <div style={label}>Amount Paid</div>
+              <div style={label}>{isRouteOrder ? "Amount Collected" : "Amount Paid"}</div>
               <input
                 type="number"
                 min="0"
@@ -479,7 +577,7 @@ export default function OrderDetails() {
             </div>
 
             <div style={{ marginBottom: 12 }}>
-              <div style={label}>Balance Due</div>
+              <div style={label}>{isRouteOrder ? "Balance To Collect" : "Balance Due"}</div>
               <div style={{ ...value, color: parseFloat(order.balance_due || 0) > 0 ? "#f59e0b" : c.text }}>
                 {money(order.balance_due)}
               </div>
@@ -488,7 +586,7 @@ export default function OrderDetails() {
             {order.order_type === "route" ? (
               <>
                 <div style={{ marginBottom: 12 }}>
-                  <div style={label}>Due Date</div>
+                  <div style={label}>Credit Due Date</div>
                   <input
                     type="date"
                     value={dueDate}
@@ -501,7 +599,7 @@ export default function OrderDetails() {
                   <div style={label}>Last Payment Date</div>
                   <div style={value}>
                     {order.last_payment_date
-                      ? new Date(order.last_payment_date).toLocaleString()
+                      ? formatDateTime(order.last_payment_date)
                       : "—"}
                   </div>
                 </div>
@@ -538,7 +636,7 @@ export default function OrderDetails() {
                 opacity: savingSettlement ? 0.7 : 1,
               }}
             >
-              {savingSettlement ? "Saving..." : "Update Settlement"}
+              {savingSettlement ? "Saving..." : isRouteOrder ? "Update Delivery Payment" : "Update Settlement"}
             </button>
           </div>
         </div>
