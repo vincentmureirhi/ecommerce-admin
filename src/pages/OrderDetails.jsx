@@ -406,6 +406,84 @@ export default function OrderDetails() {
         </div>
 
         <div style={{ display: "grid", gap: 20 }}>
+          {isRouteOrder ? (
+            <div style={card}>
+              <h3 style={{ marginTop: 0, fontSize: 14, fontWeight: 700, marginBottom: 10, color: c.text }}>
+                Route Handoff
+              </h3>
+
+              <div style={{ marginBottom: 12 }}>
+                <div style={label}>Collection Method</div>
+                <div style={value}>Handled by delivery team / POS</div>
+                <div style={{ marginTop: 6, fontSize: 12, color: c.textMuted }}>
+                  Route customer payments are recorded outside this order screen.
+                </div>
+              </div>
+
+              <div style={{ marginBottom: 12 }}>
+                <div style={label}>Order Value</div>
+                <div style={value}>{money(order.total_amount)}</div>
+              </div>
+
+              <div style={{ marginBottom: 12 }}>
+                <div style={label}>Delivery Stage</div>
+                <div style={value}>{visibleStatusMeta.label}</div>
+              </div>
+
+              <div style={{ marginBottom: 12 }}>
+                <div style={label}>Picking State</div>
+                <div style={value}>{order.is_printed ? "Ready for dispatch" : "Print before dispatch"}</div>
+              </div>
+
+              <div style={{ marginBottom: 12 }}>
+                <div style={label}>Update Route Stage</div>
+                <select
+                  value={orderStatus}
+                  onChange={(e) => setOrderStatus(e.target.value)}
+                  style={inputStyle(c)}
+                >
+                  {ROUTE_STATUS_FLOW.map((step) => (
+                    <option key={step.value} value={step.value}>
+                      {step.label}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  onClick={onSaveOrderStatus}
+                  disabled={savingOrderStatus || !hasOrderStatusChanges}
+                  style={{
+                    width: "100%",
+                    padding: "10px 12px",
+                    background: "#667eea",
+                    color: "white",
+                    border: "none",
+                    borderRadius: 6,
+                    cursor: savingOrderStatus ? "not-allowed" : "pointer",
+                    fontSize: 12,
+                    fontWeight: 700,
+                    marginTop: 10,
+                    opacity: savingOrderStatus || !hasOrderStatusChanges ? 0.7 : 1,
+                  }}
+                >
+                  {savingOrderStatus ? "Saving..." : hasOrderStatusChanges ? "Save Route Stage" : "Stage Up To Date"}
+                </button>
+              </div>
+
+              <div
+                style={{
+                  border: `1px solid ${c.border}`,
+                  borderRadius: 8,
+                  padding: 12,
+                  color: c.textMuted,
+                  fontSize: 12,
+                  lineHeight: 1.6,
+                }}
+              >
+                Update the route stage for warehouse and delivery planning. Payment collection is handled at delivery through POS.
+              </div>
+            </div>
+          ) : (
+          <>
           <div style={card}>
             <h3 style={{ marginTop: 0, fontSize: 14, fontWeight: 700, marginBottom: 14, color: c.text }}>
               {isRouteOrder ? "🚚 Route Delivery" : "📦 Order Status"}
@@ -639,6 +717,8 @@ export default function OrderDetails() {
               {savingSettlement ? "Saving..." : isRouteOrder ? "Update Delivery Payment" : "Update Settlement"}
             </button>
           </div>
+          </>
+          )}
         </div>
       </div>
 

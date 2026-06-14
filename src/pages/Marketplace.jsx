@@ -8,6 +8,7 @@ import {
   listVendorPlans,
   listVendors,
   rejectVendorApplication,
+  resetVendorOwnerPassword,
   updateVendor,
   updateVendorPlan,
 } from "../api/vendors";
@@ -285,6 +286,7 @@ export default function Marketplace() {
   const [selectedApplication, setSelectedApplication] = useState(null);
   const [approvalDraft, setApprovalDraft] = useState(null);
   const [credentials, setCredentials] = useState(null);
+  const [passwordReset, setPasswordReset] = useState(null);
   const [newPlan, setNewPlan] = useState({
     code: "",
     name: "",
@@ -439,6 +441,29 @@ export default function Marketplace() {
       await loadData({ silent: true });
     } catch (err) {
       setError(err?.response?.data?.error || err?.message || "Failed to update vendor");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function resetOwnerPassword(vendor) {
+    const reason = window.prompt(
+      `Reset owner password for ${vendor.store_name}? Add a short reason for the audit log.`,
+      "Owner forgot temporary password"
+    );
+    if (reason === null) return;
+
+    setSaving(true);
+    setError("");
+    setSuccess("");
+    setPasswordReset(null);
+    try {
+      const result = await resetVendorOwnerPassword(vendor.id, { reason: reason.trim() });
+      setPasswordReset(result);
+      setSuccess(`Owner password reset for ${vendor.store_name}. Copy the new temporary password now.`);
+      await loadData({ silent: true });
+    } catch (err) {
+      setError(err?.response?.data?.error || err?.message || "Failed to reset owner password");
     } finally {
       setSaving(false);
     }
@@ -752,6 +777,9 @@ export default function Marketplace() {
                             Verify
                           </Button>
                         )}
+                        <Button tone="ghost" disabled={saving} onClick={() => resetOwnerPassword(vendor)}>
+                          Reset owner password
+                        </Button>
                       </div>
                     </Cell>
                   </tr>
@@ -869,6 +897,71 @@ export default function Marketplace() {
             </div>
           )}
         </>
+      )}
+
+      {passwordReset?.temporary_password && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(15,23,42,0.62)",
+            zIndex: 60,
+            display: "grid",
+            placeItems: "center",
+            padding: 18,
+          }}
+        >
+          <div
+            style={{
+              width: "min(560px, 100%)",
+              borderRadius: 12,
+              background: c.card,
+              border: `1px solid ${c.border}`,
+              color: c.text,
+              boxShadow: "0 24px 70px rgba(0,0,0,0.28)",
+              overflow: "hidden",
+            }}
+          >
+            <div style={{ padding: 18, borderBottom: `1px solid ${c.borderLight}` }}>
+              <h2 style={{ margin: 0, fontSize: 20 }}>Owner Password Reset</h2>
+              <p style={{ margin: "6px 0 0", color: c.textMuted, fontSize: 13 }}>
+                Share this with the store owner now. It will not be shown again after closing.
+              </p>
+            </div>
+            <div style={{ padding: 18, display: "grid", gap: 12 }}>
+              <div
+                style={{
+                  border: "1px solid #16a34a",
+                  background: isDark ? "rgba(22,163,74,0.14)" : "#f0fdf4",
+                  color: isDark ? "#bbf7d0" : "#166534",
+                  borderRadius: 10,
+                  padding: 14,
+                  lineHeight: 1.7,
+                }}
+              >
+                <strong>{passwordReset.store_name}</strong>
+                <div>Username: {passwordReset.username || passwordReset.vendor_user?.username}</div>
+                <div>Temporary password: {passwordReset.temporary_password}</div>
+              </div>
+              <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", flexWrap: "wrap" }}>
+                <Button
+                  tone="ghost"
+                  onClick={() => {
+                    const text = `Vendor login\nStore: ${passwordReset.store_name}\nUsername: ${
+                      passwordReset.username || passwordReset.vendor_user?.username || ""
+                    }\nTemporary password: ${passwordReset.temporary_password}`;
+                    navigator.clipboard?.writeText(text);
+                  }}
+                >
+                  Copy details
+                </Button>
+                <Button tone="orange" onClick={() => setPasswordReset(null)}>
+                  Done
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
       {selectedApplication && approvalDraft && (

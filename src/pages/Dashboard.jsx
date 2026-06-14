@@ -61,25 +61,52 @@ export default function Dashboard() {
         setTimeout(() => reject(new Error('Dashboard load timeout')), 30000)
       );
 
-      const overview = await Promise.race([
-        dashboardService.getOverview(activeFilter, 15),
-        timeout,
+      const allDataPromise = Promise.all([
+        dashboardService.getKPIs(activeFilter),
+        dashboardService.getSalesTrend(activeFilter),
+        dashboardService.getAlerts(),
+        dashboardService.getTopProducts(5, activeFilter),
+        dashboardService.getLowStock(10),
+        dashboardService.getRecentOrders(10),
+        dashboardService.getRevenueByRegion(activeFilter),
+        dashboardService.getTopCustomers(5, activeFilter),
+        dashboardService.getTopSalesReps(5, activeFilter),
+        dashboardService.getPaymentHealth(activeFilter),
+        dashboardService.getRecentActivity(15),
+        dashboardService.getInventoryIntelligence(),
+        dashboardService.getMorningSummary(),
       ]);
 
+      const [
+        kpisData,
+        trendData,
+        alertsData,
+        productsData,
+        stockData,
+        ordersData,
+        regionData,
+        customersData,
+        repsData,
+        paymentData,
+        activityData,
+        inventoryData,
+        summaryData,
+      ] = await Promise.race([allDataPromise, timeout]);
+
       // Set all data with null safety
-      setKpis(overview?.kpis || {});
-      setTrend(Array.isArray(overview?.trend) ? overview.trend : []);
-      setAlerts(Array.isArray(overview?.alerts) ? overview.alerts : []);
-      setTopProducts(Array.isArray(overview?.top_products) ? overview.top_products : []);
-      setLowStock(Array.isArray(overview?.low_stock) ? overview.low_stock : []);
-      setRecentOrders(Array.isArray(overview?.recent_orders) ? overview.recent_orders : []);
-      setRevenueByRegion(Array.isArray(overview?.revenue_by_region) ? overview.revenue_by_region : []);
-      setTopCustomers(Array.isArray(overview?.top_customers) ? overview.top_customers : []);
-      setTopSalesReps(Array.isArray(overview?.top_sales_reps) ? overview.top_sales_reps : []);
-      setPaymentHealth(overview?.payment_health || {});
-      setRecentActivity(Array.isArray(overview?.recent_activity) ? overview.recent_activity : []);
-      setInventoryIntelligence(overview?.inventory_intelligence || {});
-      setMorningSummary(overview?.morning_summary || {});
+      setKpis(kpisData || {});
+      setTrend(Array.isArray(trendData) ? trendData : []);
+      setAlerts(Array.isArray(alertsData) ? alertsData : []);
+      setTopProducts(Array.isArray(productsData) ? productsData : []);
+      setLowStock(Array.isArray(stockData) ? stockData : []);
+      setRecentOrders(Array.isArray(ordersData) ? ordersData : []);
+      setRevenueByRegion(Array.isArray(regionData) ? regionData : []);
+      setTopCustomers(Array.isArray(customersData) ? customersData : []);
+      setTopSalesReps(Array.isArray(repsData) ? repsData : []);
+      setPaymentHealth(paymentData || {});
+      setRecentActivity(Array.isArray(activityData) ? activityData : []);
+      setInventoryIntelligence(inventoryData || {});
+      setMorningSummary(summaryData || {});
 
       setLastUpdate(new Date());
       loadAttemptRef.current = 0;
@@ -143,8 +170,8 @@ export default function Dashboard() {
     socket.on('payment:failed', reloadFromLiveEvent);
     socket.on('payment:pending', reloadFromLiveEvent);
     socket.on('payment:updated', reloadFromLiveEvent);
-    socket.on('dashboard:updated', reloadFromLiveEvent);
     socket.on('alert:new', reloadFromLiveEvent);
+    socket.on('dashboard:updated', reloadFromLiveEvent);
 
     return () => {
       socket.disconnect();
@@ -370,11 +397,11 @@ export default function Dashboard() {
                 <KPICard
                   isDark={isDark}
                   c={c}
-                  icon="💰"
-                  title="Revenue"
-                  value={`KSh ${kpis.revenue?.toLocaleString() || 0}`}
+                  icon="KSh"
+                  title="Sales Value"
+                  value={`KSh ${(kpis.booked_sales ?? kpis.revenue ?? 0).toLocaleString()}`}
                   trend={kpis.revenue_trend}
-                  subtitle={`${kpis.orders || 0} orders`}
+                  subtitle={`Paid: KSh ${(kpis.revenue || 0).toLocaleString()}`}
                   color="#667eea"
                   onClick={() => navigate('/orders')}
                 />
@@ -642,8 +669,10 @@ function OpsPulse({ c, isDark, kpis, paymentHealth, inventory, navigate }) {
 
 // KPI Card Component with Trend
 function KPICard({ isDark, c, icon, title, value, trend, subtitle, color, onClick }) {
-  const trendPercentage = trend !== undefined && trend !== null ? parseFloat(trend).toFixed(1) : null;
-  const isPositive = trendPercentage > 0;
+  const trendValue = trend !== undefined && trend !== null ? Number(trend) : null;
+  const trendPercentage = trendValue !== null && Number.isFinite(trendValue) ? trendValue.toFixed(1) : null;
+  const isPositive = trendValue > 0;
+  const isNeutral = trendValue === 0;
 
   return (
     <div
@@ -673,12 +702,16 @@ function KPICard({ isDark, c, icon, title, value, trend, subtitle, color, onClic
           <div style={{
             fontSize: '12px',
             fontWeight: 700,
-            color: isPositive ? '#10b981' : '#ff5f57',
-            background: isPositive ? 'rgba(16, 185, 129, 0.1)' : 'rgba(255, 95, 87, 0.1)',
+            color: isNeutral ? c.textMuted : isPositive ? '#10b981' : '#ff5f57',
+            background: isNeutral
+              ? (isDark ? 'rgba(148, 163, 184, 0.12)' : 'rgba(100, 116, 139, 0.1)')
+              : isPositive
+                ? 'rgba(16, 185, 129, 0.1)'
+                : 'rgba(255, 95, 87, 0.1)',
             padding: '4px 8px',
             borderRadius: '4px',
           }}>
-            {isPositive ? '📈' : '📉'} {Math.abs(trendPercentage)}%
+            {isNeutral ? '•' : isPositive ? '↑' : '↓'} {Math.abs(trendValue).toFixed(1)}%
           </div>
         )}
       </div>

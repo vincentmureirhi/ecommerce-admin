@@ -40,6 +40,11 @@ export async function updateVendor(id, payload) {
   return unwrap(res);
 }
 
+export async function resetVendorOwnerPassword(id, payload = {}) {
+  const res = await client.post(`/vendors/${id}/reset-owner-password`, payload);
+  return unwrap(res);
+}
+
 export async function listVendorPlans() {
   const res = await client.get("/vendors/plans");
   return unwrap(res);
