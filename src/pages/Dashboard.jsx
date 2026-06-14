@@ -61,52 +61,25 @@ export default function Dashboard() {
         setTimeout(() => reject(new Error('Dashboard load timeout')), 30000)
       );
 
-      const allDataPromise = Promise.all([
-        dashboardService.getKPIs(activeFilter),
-        dashboardService.getSalesTrend(activeFilter),
-        dashboardService.getAlerts(),
-        dashboardService.getTopProducts(5, activeFilter),
-        dashboardService.getLowStock(10),
-        dashboardService.getRecentOrders(10),
-        dashboardService.getRevenueByRegion(activeFilter),
-        dashboardService.getTopCustomers(5, activeFilter),
-        dashboardService.getTopSalesReps(5, activeFilter),
-        dashboardService.getPaymentHealth(activeFilter),
-        dashboardService.getRecentActivity(15),
-        dashboardService.getInventoryIntelligence(),
-        dashboardService.getMorningSummary(),
+      const overview = await Promise.race([
+        dashboardService.getOverview(activeFilter, 15),
+        timeout,
       ]);
 
-      const [
-        kpisData,
-        trendData,
-        alertsData,
-        productsData,
-        stockData,
-        ordersData,
-        regionData,
-        customersData,
-        repsData,
-        paymentData,
-        activityData,
-        inventoryData,
-        summaryData,
-      ] = await Promise.race([allDataPromise, timeout]);
-
       // Set all data with null safety
-      setKpis(kpisData || {});
-      setTrend(Array.isArray(trendData) ? trendData : []);
-      setAlerts(Array.isArray(alertsData) ? alertsData : []);
-      setTopProducts(Array.isArray(productsData) ? productsData : []);
-      setLowStock(Array.isArray(stockData) ? stockData : []);
-      setRecentOrders(Array.isArray(ordersData) ? ordersData : []);
-      setRevenueByRegion(Array.isArray(regionData) ? regionData : []);
-      setTopCustomers(Array.isArray(customersData) ? customersData : []);
-      setTopSalesReps(Array.isArray(repsData) ? repsData : []);
-      setPaymentHealth(paymentData || {});
-      setRecentActivity(Array.isArray(activityData) ? activityData : []);
-      setInventoryIntelligence(inventoryData || {});
-      setMorningSummary(summaryData || {});
+      setKpis(overview?.kpis || {});
+      setTrend(Array.isArray(overview?.trend) ? overview.trend : []);
+      setAlerts(Array.isArray(overview?.alerts) ? overview.alerts : []);
+      setTopProducts(Array.isArray(overview?.top_products) ? overview.top_products : []);
+      setLowStock(Array.isArray(overview?.low_stock) ? overview.low_stock : []);
+      setRecentOrders(Array.isArray(overview?.recent_orders) ? overview.recent_orders : []);
+      setRevenueByRegion(Array.isArray(overview?.revenue_by_region) ? overview.revenue_by_region : []);
+      setTopCustomers(Array.isArray(overview?.top_customers) ? overview.top_customers : []);
+      setTopSalesReps(Array.isArray(overview?.top_sales_reps) ? overview.top_sales_reps : []);
+      setPaymentHealth(overview?.payment_health || {});
+      setRecentActivity(Array.isArray(overview?.recent_activity) ? overview.recent_activity : []);
+      setInventoryIntelligence(overview?.inventory_intelligence || {});
+      setMorningSummary(overview?.morning_summary || {});
 
       setLastUpdate(new Date());
       loadAttemptRef.current = 0;
@@ -154,6 +127,7 @@ export default function Dashboard() {
       setSocketConnected(true);
       socket.emit('subscribe:payments');
       socket.emit('subscribe:alerts');
+      socket.emit('subscribe:dashboard');
     });
 
     socket.on('disconnect', () => {
@@ -169,6 +143,7 @@ export default function Dashboard() {
     socket.on('payment:failed', reloadFromLiveEvent);
     socket.on('payment:pending', reloadFromLiveEvent);
     socket.on('payment:updated', reloadFromLiveEvent);
+    socket.on('dashboard:updated', reloadFromLiveEvent);
     socket.on('alert:new', reloadFromLiveEvent);
 
     return () => {

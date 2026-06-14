@@ -1,455 +1,127 @@
 import client from "../api/client";
 
-const PAID_STATUSES = new Set(["completed", "manually_resolved"]);
-const OPEN_PAYMENT_STATUSES = new Set(["initiated", "pending"]);
-const FAILED_PAYMENT_STATUSES = new Set(["failed", "cancelled", "timeout"]);
+const EMPTY_OVERVIEW = {
+  kpis: {},
+  trend: [],
+  alerts: [],
+  top_products: [],
+  low_stock: [],
+  recent_orders: [],
+  revenue_by_region: [],
+  top_customers: [],
+  top_sales_reps: [],
+  payment_health: {},
+  recent_activity: [],
+  inventory_intelligence: {},
+  morning_summary: {},
+};
 
-function toNumber(value, fallback = 0) {
-  const n = Number(value);
-  return Number.isFinite(n) ? n : fallback;
+function unwrap(response) {
+  return response?.data?.success ? response.data.data : response?.data;
 }
 
-function isPaid(payment) {
-  return PAID_STATUSES.has(String(payment?.status || "").toLowerCase());
-}
-
-function getPaidAmount(payment) {
-  return toNumber(payment?.received_amount ?? payment?.amount);
-}
-
-function getOrderStatus(order) {
-  return String(order?.order_status || order?.status || "pending").toLowerCase();
-}
-
-function getRange(filter = "30days") {
-  const now = new Date();
-  const start = new Date(now);
-  const end = new Date(now);
-
-  if (filter === "today") {
-    start.setHours(0, 0, 0, 0);
-    return { start, end };
-  }
-
-  if (filter === "yesterday") {
-    start.setDate(start.getDate() - 1);
-    start.setHours(0, 0, 0, 0);
-    end.setDate(end.getDate() - 1);
-    end.setHours(23, 59, 59, 999);
-    return { start, end };
-  }
-
-  if (filter === "thismonth") {
-    start.setDate(1);
-    start.setHours(0, 0, 0, 0);
-    return { start, end };
-  }
-
-  const days = filter === "7days" ? 7 : 30;
-  start.setDate(start.getDate() - days);
-  return { start, end };
-}
-
-function inRange(value, filter) {
-  if (!value) return false;
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return false;
-  const { start, end } = getRange(filter);
-  return date >= start && date <= end;
-}
-
-function inWindow(value, start, end) {
-  if (!value) return false;
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return false;
-  return date >= start && date <= end;
-}
-
-function getPreviousRange(filter = "30days") {
-  const { start, end } = getRange(filter);
-  const duration = end.getTime() - start.getTime();
+function normalizeOverview(payload) {
+  const data = payload && typeof payload === "object" ? payload : {};
   return {
-    start: new Date(start.getTime() - duration),
-    end: new Date(start.getTime()),
+    ...EMPTY_OVERVIEW,
+    ...data,
+    kpis: data.kpis || {},
+    trend: Array.isArray(data.trend) ? data.trend : [],
+    alerts: Array.isArray(data.alerts) ? data.alerts : [],
+    top_products: Array.isArray(data.top_products) ? data.top_products : [],
+    low_stock: Array.isArray(data.low_stock) ? data.low_stock : [],
+    recent_orders: Array.isArray(data.recent_orders) ? data.recent_orders : [],
+    revenue_by_region: Array.isArray(data.revenue_by_region) ? data.revenue_by_region : [],
+    top_customers: Array.isArray(data.top_customers) ? data.top_customers : [],
+    top_sales_reps: Array.isArray(data.top_sales_reps) ? data.top_sales_reps : [],
+    payment_health: data.payment_health || {},
+    recent_activity: Array.isArray(data.recent_activity) ? data.recent_activity : [],
+    inventory_intelligence: data.inventory_intelligence || {},
+    morning_summary: data.morning_summary || {},
   };
 }
 
-function percentChange(current, previous) {
-  const currentValue = toNumber(current);
-  const previousValue = toNumber(previous);
-  if (previousValue === 0 && currentValue === 0) return null;
-  if (previousValue === 0) return 100;
-  return Number((((currentValue - previousValue) / previousValue) * 100).toFixed(1));
-}
-
-function sameDay(value, target = new Date()) {
-  if (!value) return false;
-  return new Date(value).toDateString() === target.toDateString();
-}
-
-async function fetchAPI(endpoint, options = {}) {
-  try {
-    const response = await client.get(endpoint, options);
-    return response.data?.success ? response.data.data : response.data;
-  } catch (err) {
-    console.error(`Dashboard API error [${endpoint}]:`, err?.response?.status || err.message);
-    return null;
-  }
-}
-
-async function loadOrders() {
-  const data = await fetchAPI("/orders");
-  return Array.isArray(data) ? data : [];
-}
-
-async function loadPayments() {
-  const data = await fetchAPI("/payments");
-  return Array.isArray(data) ? data : [];
-}
-
-async function loadInventory() {
-  const data = await fetchAPI("/inventory/analytics", {
-    params: { profit_type: "retail" },
+async function fetchOverview(filter = "30days", limit = 15) {
+  const response = await client.get("/analytics/overview", {
+    params: { filter, limit },
   });
-
-  return {
-    summary: data?.summary || {},
-    products: Array.isArray(data?.products) ? data.products : [],
-    best_sellers: Array.isArray(data?.best_sellers) ? data.best_sellers : [],
-    slow_moving: Array.isArray(data?.slow_moving) ? data.slow_moving : [],
-  };
+  return normalizeOverview(unwrap(response));
 }
 
-function sortByDateDesc(a, b) {
-  return new Date(b.created_at || b.updated_at || 0) - new Date(a.created_at || a.updated_at || 0);
-}
-
-function formatPaymentActivity(payment) {
-  const status = String(payment.status || "pending").toLowerCase();
-  const label = PAID_STATUSES.has(status)
-    ? "Completed"
-    : FAILED_PAYMENT_STATUSES.has(status)
-    ? "Failed"
-    : "Pending";
-
-  return {
-    message: `Payment #${payment.id} - ${label} (KSh ${getPaidAmount(payment).toLocaleString()})`,
-    timestamp: payment.created_at ? new Date(payment.created_at).toLocaleTimeString() : "Just now",
-  };
+async function fetchSection(endpoint, fallback, params = {}) {
+  const response = await client.get(endpoint, { params });
+  const data = unwrap(response);
+  return data ?? fallback;
 }
 
 export const dashboardService = {
+  getOverview: fetchOverview,
+
   getKPIs: async (filter = "30days") => {
-    const [payments, orders, inventory] = await Promise.all([
-      loadPayments(),
-      loadOrders(),
-      loadInventory(),
-    ]);
-
-    const filteredPayments = payments.filter((p) => inRange(p.created_at, filter));
-    const filteredOrders = orders.filter((o) => inRange(o.created_at, filter));
-    const previousRange = getPreviousRange(filter);
-    const previousPayments = payments.filter((p) => inWindow(p.created_at, previousRange.start, previousRange.end));
-    const previousOrders = orders.filter((o) => inWindow(o.created_at, previousRange.start, previousRange.end));
-    const completedPayments = filteredPayments.filter(isPaid);
-    const previousCompletedPayments = previousPayments.filter(isPaid);
-    const failedPayments = filteredPayments.filter((p) =>
-      FAILED_PAYMENT_STATUSES.has(String(p.status || "").toLowerCase())
-    );
-    const pendingPayments = filteredPayments.filter((p) =>
-      OPEN_PAYMENT_STATUSES.has(String(p.status || "").toLowerCase())
-    );
-    const previousPendingPayments = previousPayments.filter((p) =>
-      OPEN_PAYMENT_STATUSES.has(String(p.status || "").toLowerCase())
-    );
-
-    const revenue = completedPayments.reduce((sum, p) => sum + getPaidAmount(p), 0);
-    const previousRevenue = previousCompletedPayments.reduce((sum, p) => sum + getPaidAmount(p), 0);
-    const totalOrders = filteredOrders.length;
-    const previousTotalOrders = previousOrders.length;
-    const aov = totalOrders > 0 ? Math.round(revenue / totalOrders) : 0;
-    const previousCustomerCount = new Set(previousOrders.map((o) => o.customer_phone || o.customer_name).filter(Boolean)).size;
-    const currentCustomerCount = new Set(filteredOrders.map((o) => o.customer_phone || o.customer_name).filter(Boolean)).size;
-    const paymentSuccessRate =
-      filteredPayments.length > 0
-        ? Math.round((completedPayments.length / filteredPayments.length) * 100)
-        : 0;
-    const previousPaymentSuccessRate =
-      previousPayments.length > 0
-        ? Math.round((previousCompletedPayments.length / previousPayments.length) * 100)
-        : 0;
-    const dispatchQueue = filteredOrders.filter((o) =>
-      ["pending", "processing"].includes(getOrderStatus(o))
-    ).length;
-
-    return {
-      revenue: Math.round(revenue),
-      orders: totalOrders,
-      aov,
-      payment_success_rate: paymentSuccessRate,
-      failed_payments: failedPayments.length,
-      pending_payments: pendingPayments.length,
-      low_stock:
-        toNumber(inventory.summary.low_stock_count) +
-        toNumber(inventory.summary.reorder_now_count),
-      out_of_stock: toNumber(inventory.summary.out_of_stock_count),
-      awaiting_dispatch: dispatchQueue,
-      new_customers: currentCustomerCount,
-      revenue_trend: percentChange(revenue, previousRevenue),
-      orders_trend: percentChange(totalOrders, previousTotalOrders),
-      payment_trend: percentChange(paymentSuccessRate, previousPaymentSuccessRate),
-      pending_trend: percentChange(previousPendingPayments.length, pendingPayments.length),
-      customer_trend: percentChange(currentCustomerCount, previousCustomerCount),
-    };
+    const data = await fetchOverview(filter);
+    return data.kpis;
   },
 
   getSalesTrend: async (filter = "30days") => {
-    const payments = await loadPayments();
-    const trend = {};
-
-    payments
-      .filter((p) => isPaid(p) && inRange(p.created_at, filter))
-      .forEach((p) => {
-        const date = new Date(p.created_at).toLocaleDateString("en-GB");
-        trend[date] = (trend[date] || 0) + getPaidAmount(p);
-      });
-
-    return Object.entries(trend)
-      .map(([date, revenue]) => ({ date, revenue: Math.round(revenue) }))
-      .sort((a, b) => new Date(a.date) - new Date(b.date));
+    const data = await fetchOverview(filter);
+    return data.trend;
   },
 
   getAlerts: async () => {
-    const [payments, inventory] = await Promise.all([loadPayments(), loadInventory()]);
-    const alerts = [];
-    const now = new Date();
-
-    const todaysFailed = payments.filter((p) =>
-      FAILED_PAYMENT_STATUSES.has(String(p.status || "").toLowerCase()) && sameDay(p.created_at, now)
-    );
-
-    if (todaysFailed.length > 0) {
-      alerts.push({
-        severity: "error",
-        message: `${todaysFailed.length} payments failed today`,
-        action: "Review failed payments",
-        link: "/payments",
-      });
-    }
-
-    const pending10min = payments.filter((p) => {
-      if (!OPEN_PAYMENT_STATUSES.has(String(p.status || "").toLowerCase())) return false;
-      return (now - new Date(p.created_at)) / 60000 > 10;
-    });
-
-    if (pending10min.length > 0) {
-      alerts.push({
-        severity: "warning",
-        message: `${pending10min.length} payments pending for 10+ minutes`,
-        action: "Check payment status",
-        link: "/payments",
-      });
-    }
-
-    const needsReview = payments.filter((p) =>
-      ["mismatch", "manual_review"].includes(String(p.reconciliation_status || "").toLowerCase())
-    );
-
-    if (needsReview.length > 0) {
-      alerts.push({
-        severity: "warning",
-        message: `${needsReview.length} payments need reconciliation`,
-        action: "Open payment desk",
-        link: "/payments",
-      });
-    }
-
-    const stockouts = inventory.products.filter((p) => p.stock_status === "out_of_stock");
-    if (stockouts.length > 0) {
-      alerts.push({
-        severity: "error",
-        message: `${stockouts.length} SKUs are out of stock`,
-        action: "Open inventory command center",
-        link: "/inventory",
-      });
-    }
-
-    return alerts;
+    const data = await fetchOverview("30days");
+    return data.alerts;
   },
 
-  getTopProducts: async (limit = 5) => {
-    const inventory = await loadInventory();
-    const candidates = inventory.best_sellers.length > 0 ? inventory.best_sellers : inventory.products;
-
-    return candidates
-      .map((p) => ({
-        name: p.product_name || p.name,
-        units_sold: toNumber(p.units_sold_30d),
-        revenue: toNumber(p.units_sold_30d) * toNumber(p.retail_price),
-      }))
-      .filter((p) => p.units_sold > 0)
-      .sort((a, b) => b.units_sold - a.units_sold)
-      .slice(0, limit);
+  getTopProducts: async (limit = 5, filter = "30days") => {
+    const data = await fetchOverview(filter, limit);
+    return data.top_products.slice(0, limit);
   },
 
   getLowStock: async (limit = 10) => {
-    const inventory = await loadInventory();
-    const priority = { out_of_stock: 0, reorder_now: 1, low_stock: 2, healthy: 3 };
-
-    return inventory.products
-      .filter((p) => ["out_of_stock", "reorder_now", "low_stock"].includes(p.stock_status))
-      .sort((a, b) => (priority[a.stock_status] ?? 9) - (priority[b.stock_status] ?? 9))
-      .slice(0, limit)
-      .map((p) => ({
-        name: p.product_name,
-        current_stock: toNumber(p.current_stock),
-        retail_price: toNumber(p.retail_price),
-      }));
+    const data = await fetchOverview("30days", limit);
+    return data.low_stock.slice(0, limit);
   },
 
   getRecentOrders: async (limit = 10) => {
-    const orders = await loadOrders();
-
-    return orders
-      .sort(sortByDateDesc)
-      .slice(0, limit)
-      .map((o) => ({
-        id: o.id,
-        order_number: o.order_number || `ORD-${o.id}`,
-        customer_name: o.customer_name || "Unknown",
-        total_amount: toNumber(o.total_amount),
-        status: getOrderStatus(o),
-        created_at: o.created_at,
-      }));
+    const data = await fetchOverview("30days", limit);
+    return data.recent_orders.slice(0, limit);
   },
 
   getRevenueByRegion: async (filter = "30days") => {
-    const [orders, payments] = await Promise.all([loadOrders(), loadPayments()]);
-    const ordersById = new Map(orders.map((o) => [Number(o.id), o]));
-    const regionData = {};
-
-    payments.filter((p) => isPaid(p) && inRange(p.created_at, filter)).forEach((p) => {
-      const order = ordersById.get(Number(p.order_id));
-      const regionName = order?.region_name || order?.last_sale_region || order?.location_name || "Unassigned";
-
-      if (!regionData[regionName]) {
-        regionData[regionName] = { name: regionName, revenue: 0, orders: 0 };
-      }
-
-      regionData[regionName].revenue += getPaidAmount(p);
-      regionData[regionName].orders += 1;
-    });
-
-    return Object.values(regionData).sort((a, b) => b.revenue - a.revenue);
+    const data = await fetchOverview(filter);
+    return data.revenue_by_region;
   },
 
-  getTopCustomers: async (limit = 5) => {
-    const orders = await loadOrders();
-    const customerData = {};
-
-    orders.forEach((o) => {
-      const key = o.customer_phone || o.customer_name || "Unknown";
-      if (!customerData[key]) {
-        customerData[key] = {
-          name: o.customer_name || "Unknown",
-          order_count: 0,
-          total_spent: 0,
-        };
-      }
-      customerData[key].order_count += 1;
-      customerData[key].total_spent += toNumber(o.total_amount);
-    });
-
-    return Object.values(customerData)
-      .sort((a, b) => b.total_spent - a.total_spent)
-      .slice(0, limit);
+  getTopCustomers: async (limit = 5, filter = "30days") => {
+    const data = await fetchOverview(filter, limit);
+    return data.top_customers.slice(0, limit);
   },
 
-  getTopSalesReps: async (limit = 5) => {
-    const orders = await loadOrders();
-    const repData = {};
-
-    orders.forEach((o) => {
-      const repName = o.sales_rep_name || "Unassigned";
-      if (!repData[repName]) {
-        repData[repName] = { name: repName, order_count: 0, revenue: 0 };
-      }
-      repData[repName].order_count += 1;
-      repData[repName].revenue += toNumber(o.total_amount);
-    });
-
-    return Object.values(repData)
-      .sort((a, b) => b.revenue - a.revenue)
-      .slice(0, limit);
+  getTopSalesReps: async (limit = 5, filter = "30days") => {
+    const data = await fetchOverview(filter, limit);
+    return data.top_sales_reps.slice(0, limit);
   },
 
-  getPaymentHealth: async () => {
-    const payments = await loadPayments();
-    const now = new Date();
-    const completed = payments.filter(isPaid).length;
-    const pendingOld = payments.filter((p) => {
-      if (!OPEN_PAYMENT_STATUSES.has(String(p.status || "").toLowerCase())) return false;
-      return (now - new Date(p.created_at)) / 60000 > 10;
-    }).length;
-    const failedToday = payments.filter((p) =>
-      FAILED_PAYMENT_STATUSES.has(String(p.status || "").toLowerCase()) && sameDay(p.created_at, now)
-    ).length;
-    const unmatched = payments.filter((p) => !p.order_id).length;
-
-    return {
-      success_rate: payments.length > 0 ? Math.round((completed / payments.length) * 100) : 0,
-      failed_today: failedToday,
-      pending_old: pendingOld,
-      unmatched,
-    };
+  getPaymentHealth: async (filter = "30days") => {
+    const data = await fetchOverview(filter);
+    return data.payment_health;
   },
 
   getRecentActivity: async (limit = 15) => {
-    const payments = await loadPayments();
-    return payments.sort(sortByDateDesc).slice(0, limit).map(formatPaymentActivity);
+    const data = await fetchOverview("30days", limit);
+    return data.recent_activity.slice(0, limit);
   },
 
   getInventoryIntelligence: async () => {
-    const inventory = await loadInventory();
-    const products = inventory.products;
-
-    return {
-      low_stock: products.filter((p) => p.stock_status === "low_stock").length,
-      reorder_now: products.filter((p) => p.stock_status === "reorder_now").length,
-      out_of_stock: products.filter((p) => p.stock_status === "out_of_stock").length,
-      fast_moving: products.filter((p) => p.movement_status === "fast_moving").length,
-      slow_moving: products.filter((p) => p.movement_status === "slow_moving").length,
-      dead_stock: products.filter((p) => p.movement_status === "dead_stock").length,
-      dead_stock_value: Math.round(
-        products
-          .filter((p) => p.movement_status === "dead_stock")
-          .reduce((sum, p) => sum + toNumber(p.stock_value), 0)
-      ),
-    };
+    const data = await fetchOverview("30days");
+    return data.inventory_intelligence;
   },
 
   getMorningSummary: async () => {
-    const today = new Date();
-    const [orders, payments, inventory] = await Promise.all([
-      loadOrders(),
-      loadPayments(),
-      loadInventory(),
-    ]);
-
-    const todaysOrders = orders.filter((o) => sameDay(o.created_at, today));
-    const todaysPayments = payments.filter((p) => sameDay(p.created_at, today));
-    const revenue = todaysPayments.filter(isPaid).reduce((sum, p) => sum + getPaidAmount(p), 0);
-
-    return {
-      new_orders: todaysOrders.length,
-      revenue: Math.round(revenue),
-      pending_dispatch: todaysOrders.filter((o) => ["pending", "processing"].includes(getOrderStatus(o))).length,
-      failed_payments: todaysPayments.filter((p) =>
-        FAILED_PAYMENT_STATUSES.has(String(p.status || "").toLowerCase())
-      ).length,
-      low_stock:
-        toNumber(inventory.summary.low_stock_count) +
-        toNumber(inventory.summary.reorder_now_count),
-    };
+    const data = await fetchOverview("today");
+    return data.morning_summary;
   },
+
+  // Kept for targeted diagnostics from the browser console.
+  getRawSection: fetchSection,
 };
