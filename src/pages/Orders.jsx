@@ -1,4 +1,5 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { io } from "socket.io-client";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useTheme } from "../context/ThemeContext";
 import { getThemeColors } from "../utils/themeColors";
@@ -12,10 +13,73 @@ import { listSalesReps } from "../api/salesReps";
 import { getOrderStatusMeta } from "../utils/orderStatus";
 import { openOrderPrintWindow } from "../utils/orderPrint";
 
+const API_BASE_URL =
+  import.meta.env.VITE_API_URL ||
+  "https://ecommerce-backend-9s3f.onrender.com/api";
+
+const SOCKET_URL =
+  import.meta.env.VITE_SOCKET_URL ||
+  API_BASE_URL.replace(/\/api\/?$/, "");
+
+const LIVE_REFRESH_INTERVAL_MS = 20000;
+
 function money(value) {
   return `KES ${parseFloat(value || 0).toLocaleString("en-US", {
     minimumFractionDigits: 2,
   })}`;
+}
+
+function extractPrintableBody(html) {
+  const text = String(html || "");
+  const bodyMatch = text.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
+  return bodyMatch ? bodyMatch[1] : text;
+}
+
+function buildBatchPrintHtml(orderDocs, title) {
+  const pages = orderDocs
+    .map(({ order, html }) => {
+      const body = extractPrintableBody(html);
+      return `
+        <section class="order-print-page">
+          <div class="batch-header">
+            <strong>${order.order_number || `Order #${order.id}`}</strong>
+            <span>${order.customer_name || "Customer"}</span>
+          </div>
+          ${body}
+        </section>
+      `;
+    })
+    .join("");
+
+  return `
+    <!doctype html>
+    <html>
+      <head>
+        <meta charset="utf-8" />
+        <title>${title}</title>
+        <style>
+          body { margin: 0; font-family: Arial, sans-serif; color: #111827; background: #fff; }
+          .batch-title { padding: 18px 22px; border-bottom: 1px solid #e5e7eb; }
+          .batch-title h1 { margin: 0 0 4px; font-size: 18px; }
+          .batch-title p { margin: 0; font-size: 12px; color: #6b7280; }
+          .order-print-page { page-break-after: always; padding: 16px 18px 24px; }
+          .order-print-page:last-child { page-break-after: auto; }
+          .batch-header { display: flex; justify-content: space-between; gap: 16px; margin-bottom: 12px; padding: 10px 12px; background: #f8fafc; border: 1px solid #e5e7eb; border-radius: 8px; font-size: 12px; }
+          @media print {
+            .batch-title { display: none; }
+            .order-print-page { padding: 0; }
+          }
+        </style>
+      </head>
+      <body>
+        <div class="batch-title">
+          <h1>${title}</h1>
+          <p>${orderDocs.length} order sheet${orderDocs.length === 1 ? "" : "s"} prepared for cashier printing.</p>
+        </div>
+        ${pages}
+      </body>
+    </html>
+  `;
 }
 
 function getOrderStatusStyle(status, isDark) {
@@ -166,8 +230,13 @@ export default function Orders() {
   const [err, setErr] = useState("");
   const [loading, setLoading] = useState(true);
   const [printingId, setPrintingId] = useState(null);
+  const [batchPrinting, setBatchPrinting] = useState(false);
+  const [socketConnected, setSocketConnected] = useState(false);
+  const [lastLiveRefreshAt, setLastLiveRefreshAt] = useState(null);
   const [selectedCustomer, setSelectedCustomer] = useState(null);
   const [selectedSalesRep, setSelectedSalesRep] = useState(null);
+  const socketRef = useRef(null);
+  const loadDataRef = useRef(null);
 
   const [search, setSearch] = useState("");
   const [orderType, setOrderType] = useState("");
@@ -176,9 +245,10 @@ export default function Orders() {
   const [paymentState, setPaymentState] = useState("");
   const [salesRepFilter, setSalesRepFilter] = useState(salesRepFromUrl);
 
-  async function loadData() {
+  const loadData = useCallback(async (options = {}) => {
+    const silent = Boolean(options.silent);
     setErr("");
-    setLoading(true);
+    if (!silent) setLoading(true);
 
     try {
       const filters = {};
@@ -201,13 +271,18 @@ export default function Orders() {
       setSelectedCustomer(customerData?.data || null);
       setStats(statsData?.data || null);
       setSalesReps(Array.isArray(repsData.data || repsData) ? repsData.data || repsData : []);
+      if (silent) setLastLiveRefreshAt(new Date());
     } catch (e) {
       setErr(e?.message || "Failed to load orders");
       setSelectedCustomer(null);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
-  }
+  }, [customerFromUrl, orderStatus, orderType, paymentState, printedStatus, salesRepFilter, search]);
+
+  useEffect(() => {
+    loadDataRef.current = loadData;
+  }, [loadData]);
 
   async function handlePrint(orderId) {
     try {
@@ -217,11 +292,53 @@ export default function Orders() {
       const html = res?.data?.html;
       openOrderPrintWindow(html);
 
-      await loadData();
+      await loadData({ silent: true });
     } catch (e) {
       setErr(e?.message || "Failed to print order");
     } finally {
       setPrintingId(null);
+    }
+  }
+
+  async function handleBatchPrint(options = {}) {
+    if (!salesRepFilter) {
+      setErr("Select a sales rep before using cashier batch print.");
+      return;
+    }
+
+    let printableRows = rows.filter((order) => String(order.sales_rep_id || "") === String(salesRepFilter));
+    if (options.routeOnly) {
+      printableRows = printableRows.filter((order) => order.order_type === "route");
+    }
+    if (options.pendingOnly) {
+      printableRows = printableRows.filter((order) => !order.is_printed);
+    }
+
+    if (printableRows.length === 0) {
+      setErr("No visible orders match that print selection.");
+      return;
+    }
+
+    try {
+      setErr("");
+      setBatchPrinting(true);
+      const docs = await Promise.all(
+        printableRows.map(async (order) => {
+          const res = await getOrderForPrint(order.id);
+          return {
+            order,
+            html: res?.data?.html || res?.html || "",
+          };
+        })
+      );
+
+      const repName = activeSalesRep?.name || selectedSalesRep?.name || `Sales Rep #${salesRepFilter}`;
+      openOrderPrintWindow(buildBatchPrintHtml(docs, `${repName} - Route Order Sheets`));
+      await loadData({ silent: true });
+    } catch (e) {
+      setErr(e?.message || "Failed to batch print sales rep orders");
+    } finally {
+      setBatchPrinting(false);
     }
   }
 
@@ -231,17 +348,88 @@ export default function Orders() {
     setSearchParams(next);
   }
 
+  function updateSalesRepFilter(value) {
+    setSalesRepFilter(value);
+    const next = new URLSearchParams(searchParams);
+    if (value) next.set("sales_rep", value);
+    else next.delete("sales_rep");
+    setSearchParams(next, { replace: true });
+  }
+
   useEffect(() => {
     loadData();
-  }, [search, orderType, orderStatus, customerFromUrl, printedStatus, paymentState, salesRepFilter]);
+  }, [loadData]);
+
+  useEffect(() => {
+    const socket = io(SOCKET_URL, {
+      transports: ["websocket", "polling"],
+      reconnection: true,
+      reconnectionAttempts: Infinity,
+      timeout: 10000,
+    });
+
+    socketRef.current = socket;
+
+    const refreshOrders = (payload = {}) => {
+      const eventType = String(payload?.type || "");
+      if (!eventType || eventType.includes("order")) {
+        loadDataRef.current?.({ silent: true });
+      }
+    };
+
+    socket.on("connect", () => {
+      setSocketConnected(true);
+      socket.emit("subscribe:dashboard");
+    });
+    socket.on("disconnect", () => setSocketConnected(false));
+    socket.on("dashboard:updated", refreshOrders);
+
+    return () => {
+      socket.off("connect");
+      socket.off("disconnect");
+      socket.off("dashboard:updated", refreshOrders);
+      socket.disconnect();
+      socketRef.current = null;
+    };
+  }, []);
+
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      loadData({ silent: true });
+    }, LIVE_REFRESH_INTERVAL_MS);
+
+    return () => window.clearInterval(interval);
+  }, [loadData]);
 
   useEffect(() => {
     if (salesRepFromUrl) {
       setSalesRepFilter(salesRepFromUrl);
       const found = salesReps.find((r) => String(r.id) === String(salesRepFromUrl));
       setSelectedSalesRep(found || null);
+    } else {
+      setSelectedSalesRep(null);
     }
   }, [salesRepFromUrl, salesReps]);
+
+  const activeSalesRep = useMemo(
+    () => salesReps.find((rep) => String(rep.id) === String(salesRepFilter)) || null,
+    [salesRepFilter, salesReps]
+  );
+
+  const salesRepRows = useMemo(
+    () => rows.filter((order) => String(order.sales_rep_id || "") === String(salesRepFilter)),
+    [rows, salesRepFilter]
+  );
+
+  const salesRepRouteRows = useMemo(
+    () => salesRepRows.filter((order) => order.order_type === "route"),
+    [salesRepRows]
+  );
+
+  const salesRepPendingPrintRows = useMemo(
+    () => salesRepRows.filter((order) => !order.is_printed),
+    [salesRepRows]
+  );
 
   if (loading) {
     return (
@@ -276,6 +464,44 @@ export default function Orders() {
         <p style={{ margin: 0, color: c.textMuted, fontSize: 13 }}>
           All orders from normal and region customers, with clear status progression, print acknowledgment, and settlement tracking
         </p>
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", marginTop: 10 }}>
+          <span
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 8,
+              padding: "6px 10px",
+              borderRadius: 999,
+              background: socketConnected
+                ? isDark ? "rgba(16,185,129,0.16)" : "#ecfdf5"
+                : isDark ? "rgba(245,158,11,0.14)" : "#fffbeb",
+              border: `1px solid ${
+                socketConnected
+                  ? isDark ? "rgba(16,185,129,0.28)" : "#bbf7d0"
+                  : isDark ? "rgba(245,158,11,0.28)" : "#fde68a"
+              }`,
+              color: socketConnected ? "#16a34a" : "#b45309",
+              fontSize: 12,
+              fontWeight: 800,
+            }}
+          >
+            <span
+              style={{
+                width: 8,
+                height: 8,
+                borderRadius: "50%",
+                background: socketConnected ? "#22c55e" : "#f59e0b",
+                boxShadow: socketConnected ? "0 0 0 4px rgba(34,197,94,0.16)" : "none",
+              }}
+            />
+            {socketConnected ? "Live order feed" : "Reconnecting order feed"}
+          </span>
+          {lastLiveRefreshAt && (
+            <span style={{ fontSize: 12, color: c.textMuted }}>
+              Refreshed {lastLiveRefreshAt.toLocaleTimeString()}
+            </span>
+          )}
+        </div>
       </div>
 
       {err && (
@@ -353,7 +579,7 @@ export default function Orders() {
           <span>
             Showing orders for sales rep:{" "}
             <strong>
-              {salesReps.find((r) => String(r.id) === String(salesRepFilter))?.name || `Rep #${salesRepFilter}`}
+              {activeSalesRep?.name || `Rep #${salesRepFilter}`}
             </strong>
           </span>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -364,10 +590,81 @@ export default function Orders() {
               Open Rep
             </button>
             <button
-              onClick={() => setSalesRepFilter("")}
+              onClick={() => updateSalesRepFilter("")}
               style={smallBtn("#dc3545")}
             >
               Clear Filter
+            </button>
+          </div>
+        </div>
+      )}
+
+      {salesRepFilter && (
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+            gap: 12,
+            marginBottom: 20,
+            padding: 14,
+            borderRadius: 12,
+            background: isDark ? "rgba(15,23,42,0.72)" : "#f8fafc",
+            border: `1px solid ${c.border}`,
+          }}
+        >
+          <SummaryCard
+            title="Visible Rep Orders"
+            value={salesRepRows.length}
+            subtitle={activeSalesRep?.name || `Rep #${salesRepFilter}`}
+            c={c}
+          />
+          <SummaryCard
+            title="Route Sheets"
+            value={salesRepRouteRows.length}
+            subtitle="Region customer orders"
+            c={c}
+          />
+          <SummaryCard
+            title="Needs Print"
+            value={salesRepPendingPrintRows.length}
+            subtitle="Cashier queue"
+            c={c}
+          />
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              justifyContent: "center",
+              gap: 8,
+              background: c.card,
+              border: `1px solid ${c.border}`,
+              borderRadius: 12,
+              padding: 14,
+            }}
+          >
+            <button
+              type="button"
+              onClick={() => handleBatchPrint({ routeOnly: true, pendingOnly: true })}
+              disabled={batchPrinting || salesRepPendingPrintRows.length === 0}
+              style={{
+                ...wideBtn("#16a34a"),
+                opacity: batchPrinting || salesRepPendingPrintRows.length === 0 ? 0.65 : 1,
+                cursor: batchPrinting || salesRepPendingPrintRows.length === 0 ? "not-allowed" : "pointer",
+              }}
+            >
+              {batchPrinting ? "Preparing..." : "Print New Route Sheets"}
+            </button>
+            <button
+              type="button"
+              onClick={() => handleBatchPrint({ routeOnly: true })}
+              disabled={batchPrinting || salesRepRouteRows.length === 0}
+              style={{
+                ...wideBtn("#0ea5e9"),
+                opacity: batchPrinting || salesRepRouteRows.length === 0 ? 0.65 : 1,
+                cursor: batchPrinting || salesRepRouteRows.length === 0 ? "not-allowed" : "pointer",
+              }}
+            >
+              Print Visible Route Orders
             </button>
           </div>
         </div>
@@ -453,7 +750,7 @@ export default function Orders() {
 
         <div>
           <label style={filterLabel(c)}>Sales Rep</label>
-          <select value={salesRepFilter} onChange={(e) => setSalesRepFilter(e.target.value)} style={inputStyle(c)}>
+          <select value={salesRepFilter} onChange={(e) => updateSalesRepFilter(e.target.value)} style={inputStyle(c)}>
             <option value="">All Reps</option>
             {salesReps.map((rep) => (
               <option key={rep.id} value={rep.id}>
@@ -774,5 +1071,19 @@ function smallBtn(background) {
     cursor: "pointer",
     fontSize: 11,
     fontWeight: 600,
+  };
+}
+
+function wideBtn(background) {
+  return {
+    width: "100%",
+    padding: "10px 12px",
+    background,
+    color: "white",
+    border: "none",
+    borderRadius: 8,
+    cursor: "pointer",
+    fontSize: 12,
+    fontWeight: 800,
   };
 }
