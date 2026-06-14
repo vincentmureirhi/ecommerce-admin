@@ -24,6 +24,7 @@ import OrderDetails from "./pages/OrderDetails.jsx";
 import Payments from "./pages/Payments.jsx";
 import Suppliers from "./pages/Suppliers.jsx";
 import Marketplace from "./pages/Marketplace.jsx";
+import VendorProducts from "./pages/VendorProducts.jsx";
 import Regions from "./pages/Regions.jsx";
 import RegionDetail from "./pages/RegionDetail.jsx";
 import RouteOperations from "./pages/RouteOperations.jsx";
@@ -178,6 +179,17 @@ export default function App() {
           <AdminProtected>
             <Shell>
               <Marketplace />
+            </Shell>
+          </AdminProtected>
+        }
+      />
+
+      <Route
+        path="/vendor-products"
+        element={
+          <AdminProtected>
+            <Shell>
+              <VendorProducts />
             </Shell>
           </AdminProtected>
         }

@@ -54,3 +54,28 @@ export async function updateVendorPlan(id, payload) {
   const res = await client.put(`/vendors/plans/${id}`, payload);
   return unwrap(res);
 }
+
+export async function listVendorProductSubmissions(filters = {}) {
+  const res = await client.get(`/vendors/product-submissions${queryString(filters)}`);
+  return unwrap(res);
+}
+
+export async function getVendorProductSubmission(id) {
+  const res = await client.get(`/vendors/product-submissions/${id}`);
+  return unwrap(res);
+}
+
+export async function approveVendorProductSubmission(id, payload) {
+  const res = await client.post(`/vendors/product-submissions/${id}/approve`, payload);
+  return unwrap(res);
+}
+
+export async function requestVendorProductChanges(id, payload) {
+  const res = await client.post(`/vendors/product-submissions/${id}/request-changes`, payload);
+  return unwrap(res);
+}
+
+export async function rejectVendorProductSubmission(id, payload) {
+  const res = await client.post(`/vendors/product-submissions/${id}/reject`, payload);
+  return unwrap(res);
+}
