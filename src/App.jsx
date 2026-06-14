@@ -25,6 +25,7 @@ import Payments from "./pages/Payments.jsx";
 import Suppliers from "./pages/Suppliers.jsx";
 import Regions from "./pages/Regions.jsx";
 import RegionDetail from "./pages/RegionDetail.jsx";
+import RouteOperations from "./pages/RouteOperations.jsx";
 import Locations from "./pages/Locations.jsx";
 import Inventory from "./pages/Inventory.jsx";
 import AdminManagement from "./pages/AdminManagement.jsx";
@@ -193,6 +194,17 @@ export default function App() {
       />
 
       <Route path="/routes" element={<Navigate to="/regions" replace />} />
+
+      <Route
+        path="/route-operations"
+        element={
+          <AdminProtected>
+            <Shell>
+              <RouteOperations />
+            </Shell>
+          </AdminProtected>
+        }
+      />
 
       <Route
         path="/locations"

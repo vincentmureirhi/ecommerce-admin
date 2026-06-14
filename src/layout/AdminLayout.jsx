@@ -16,6 +16,7 @@ export default function AdminLayout({ children }) {
     { path: "/categories", label: "Categories", icon: "🏷️" },
     { path: "/suppliers", label: "Suppliers", icon: "🏢" },
     { path: "/regions", label: "Regions", icon: "🌍" },
+    { path: "/route-operations", label: "Route Operations", icon: "RO" },
     { path: "/locations", label: "Locations", icon: "📍" },
     { path: "/customers", label: "Customers", icon: "👥" },
     { path: "/route-customer-applications", label: "New Route Applications", icon: "📝" },
