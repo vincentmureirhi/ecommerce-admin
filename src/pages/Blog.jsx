@@ -7,7 +7,8 @@ import {
   updateBlogPost,
   deleteBlogPost,
 } from "../api/blog";
-import { uploadAdminImage } from "../utils/imageUpload";
+import { listProducts } from "../api/products";
+import client from "../api/client";
 
 const EMPTY_FORM = {
   title: "",
@@ -50,8 +51,16 @@ function statusBadge(status, isDark) {
   };
 }
 
+// Upload an image file to the backend and return its URL
 async function uploadImage(file) {
-  return uploadAdminImage(file, "ecommerce/blog");
+  const formData = new FormData();
+  formData.append("image", file);
+  const res = await client.post("/uploads", formData, {
+    headers: { "Content-Type": "multipart/form-data" },
+  });
+  const imageUrl = res.data?.data?.image_url || res.data?.image_url;
+  if (!imageUrl) throw new Error("Upload failed — no image_url returned");
+  return imageUrl;
 }
 
 export default function Blog() {
@@ -68,6 +77,7 @@ export default function Blog() {
   const [form, setForm] = useState(EMPTY_FORM);
   const [formLoading, setFormLoading] = useState(false);
   const [formErr, setFormErr] = useState("");
+  const [products, setProducts] = useState([]);
 
   const [imageUploading, setImageUploading] = useState(false);
   const fileInputRef = useRef(null);
@@ -99,8 +109,25 @@ export default function Blog() {
     }
   }
 
+  async function loadProducts() {
+    try {
+      const res = await listProducts();
+      const rows = Array.isArray(res?.data?.data)
+        ? res.data.data
+        : Array.isArray(res?.data)
+        ? res.data
+        : Array.isArray(res)
+        ? res
+        : [];
+      setProducts(rows);
+    } catch {
+      setProducts([]);
+    }
+  }
+
   useEffect(() => {
     loadPosts();
+    loadProducts();
   }, []);
 
   function openCreate() {
@@ -134,7 +161,10 @@ export default function Blog() {
 
     try {
       const url = await uploadImage(file);
-      setForm((f) => ({ ...f, featured_image_url: url }));
+      const backendBase = (import.meta.env.VITE_API_URL || "https://ecommerce-backend-9s3f.onrender.com/api").replace(/\/api$/, "");
+      const fullUrl = url.startsWith("http") ? url : `${backendBase}${url}`;
+
+      setForm((f) => ({ ...f, featured_image_url: fullUrl }));
     } catch (e) {
       setFormErr(e?.response?.data?.message || e?.message || "Image upload failed");
     } finally {
@@ -627,16 +657,22 @@ export default function Blog() {
                 }}
               >
                 <div>
-                  <label style={labelStyle}>Associated Product ID</label>
-                  <input
-                    type="number"
-                    min="1"
-                    step="1"
+                  <label style={labelStyle}>Buy here product</label>
+                  <select
                     value={form.associated_product_id}
                     onChange={(e) => setForm((f) => ({ ...f, associated_product_id: e.target.value }))}
-                    placeholder="Optional product ID"
                     style={inputStyle}
-                  />
+                  >
+                    <option value="">No product link</option>
+                    {products.map((product) => (
+                      <option key={product.id} value={product.id}>
+                        {product.name || product.product_name} {product.sku ? `(${product.sku})` : ""}
+                      </option>
+                    ))}
+                  </select>
+                  <div style={{ marginTop: 6, fontSize: 11, color: c.textMuted }}>
+                    When selected, the storefront article shows a Buy here button for this product.
+                  </div>
                 </div>
                 <div>
                   <label style={labelStyle}>Status</label>

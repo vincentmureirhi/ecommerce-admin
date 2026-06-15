@@ -231,6 +231,7 @@ export default function ProductForm() {
     reorder_level: "10",
     current_stock: "0",
     stock_status_override: "in_stock",
+    expiry_date: "",
     is_combo_eligible: false,
     requires_manual_price: false,
     is_active: true,
@@ -316,6 +317,17 @@ export default function ProductForm() {
       return false;
     }
 
+    if (!form.expiry_date) {
+      setErr("Expiry date is required.");
+      return false;
+    }
+
+    const expiryDate = new Date(`${form.expiry_date}T00:00:00`);
+    if (Number.isNaN(expiryDate.getTime())) {
+      setErr("Expiry date is invalid.");
+      return false;
+    }
+
     const reorder = Number(form.reorder_level);
     if (!Number.isFinite(reorder) || reorder < 0) {
       setErr("Reorder level cannot be negative.");
@@ -395,6 +407,7 @@ export default function ProductForm() {
             reorder_level: String(product.reorder_level || 10),
             current_stock: String(product.current_stock || 0),
             stock_status_override: deriveStockStatus(product),
+            expiry_date: product.expiry_date ? String(product.expiry_date).slice(0, 10) : "",
             is_combo_eligible: product.is_combo_eligible === true,
             requires_manual_price: product.requires_manual_price === true,
             is_active: product.is_active !== false,
@@ -566,6 +579,7 @@ export default function ProductForm() {
         reorder_level: Math.max(0, Number(form.reorder_level) || 10),
         current_stock: stockStatus === "out_of_stock" ? 0 : Math.max(0, Number(form.current_stock) || 0),
         stock_status_override: stockStatus,
+        expiry_date: form.expiry_date,
         is_combo_eligible: form.is_combo_eligible === true,
         requires_manual_price: form.requires_manual_price === true,
         is_active: form.is_active === true,
@@ -981,6 +995,20 @@ export default function ProductForm() {
                   onChange={(e) => updateField("current_stock", e.target.value)}
                   placeholder="0"
                   disabled={form.stock_status_override === "out_of_stock"}
+                  style={inputStyle(c, isDark)}
+                />
+              </Field>
+
+              <Field
+                label="Expiry date"
+                required
+                hint="Mandatory for inventory alerts. Products inside 7 months show in expiry watch."
+                c={c}
+              >
+                <input
+                  type="date"
+                  value={form.expiry_date}
+                  onChange={(e) => updateField("expiry_date", e.target.value)}
                   style={inputStyle(c, isDark)}
                 />
               </Field>

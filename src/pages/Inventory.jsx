@@ -208,6 +208,15 @@ function formatDate(value) {
   });
 }
 
+function formatExpiryDate(value) {
+  if (!value) return "Missing";
+  return new Date(value).toLocaleDateString("en-US", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+}
+
 function formatDateTime(value) {
   if (!value) return "Not refreshed yet";
   return new Date(value).toLocaleString("en-US", {
@@ -240,6 +249,9 @@ function downloadInventoryCSV(rows) {
     "Stock",
     "Reorder Level",
     "Stock Status",
+    "Expiry Date",
+    "Days To Expiry",
+    "Expiry Status",
     "Movement",
     "Stock Value",
     "Potential Profit",
@@ -258,6 +270,9 @@ function downloadInventoryCSV(rows) {
     row.current_stock,
     row.reorder_level,
     row.stock_status,
+    row.expiry_date || "",
+    row.days_to_expiry ?? "",
+    row.expiry_status || "",
     row.movement_status,
     row.stock_value,
     row.potential_profit,
@@ -389,6 +404,47 @@ function getMovementBadge(status, isDark) {
       return {
         label: "Steady",
         bg: isDark ? "rgba(16, 185, 129, 0.2)" : "#e8f5e9",
+        color: isDark ? "#4ade80" : "#166534",
+      };
+  }
+}
+
+function getExpiryBadge(status, days, isDark) {
+  switch (status) {
+    case "expired":
+      return {
+        label: "Expired",
+        bg: isDark ? "rgba(220, 53, 69, 0.24)" : "#fee2e2",
+        color: isDark ? "#ff8a8a" : "#991b1b",
+      };
+    case "critical":
+      return {
+        label: `${days} days`,
+        bg: isDark ? "rgba(220, 53, 69, 0.20)" : "#fecaca",
+        color: isDark ? "#fca5a5" : "#b91c1c",
+      };
+    case "warning":
+      return {
+        label: `${days} days`,
+        bg: isDark ? "rgba(245, 158, 11, 0.22)" : "#fef3c7",
+        color: isDark ? "#fbbf24" : "#92400e",
+      };
+    case "watch":
+      return {
+        label: `${days} days`,
+        bg: isDark ? "rgba(59, 130, 246, 0.18)" : "#dbeafe",
+        color: isDark ? "#93c5fd" : "#1d4ed8",
+      };
+    case "missing":
+      return {
+        label: "Missing",
+        bg: isDark ? "rgba(148, 163, 184, 0.20)" : "#f1f5f9",
+        color: isDark ? "#cbd5e1" : "#475569",
+      };
+    default:
+      return {
+        label: "Healthy",
+        bg: isDark ? "rgba(16, 185, 129, 0.18)" : "#dcfce7",
         color: isDark ? "#4ade80" : "#166534",
       };
   }
@@ -622,6 +678,8 @@ export default function Inventory() {
         (actionFilter === "hot_risk" &&
           p.movement_status === "fast_moving" &&
           (p.stock_status !== "healthy" || coverageDays !== null && coverageDays <= 14)) ||
+        (actionFilter === "expiry" &&
+          ["expired", "critical", "warning", "watch", "missing"].includes(p.expiry_status)) ||
         (actionFilter === "dead_cash" && p.movement_status === "dead_stock") ||
         (actionFilter === "margin_risk" && toNumber(p.potential_profit) < 0) ||
         (actionFilter === "setup_gap" && toNumber(p.current_stock) <= 10 && toNumber(p.reorder_level) <= 0);
@@ -658,6 +716,15 @@ export default function Inventory() {
     });
 
     const deadCash = rows.filter((p) => p.movement_status === "dead_stock");
+    const expiryRisk = rows
+      .filter((p) => ["expired", "critical", "warning", "watch", "missing"].includes(p.expiry_status))
+      .sort((a, b) => {
+        const priority = { expired: 0, critical: 1, warning: 2, watch: 3, missing: 4 };
+        const pa = priority[a.expiry_status] ?? 9;
+        const pb = priority[b.expiry_status] ?? 9;
+        if (pa !== pb) return pa - pb;
+        return toNumber(a.days_to_expiry, 99999) - toNumber(b.days_to_expiry, 99999);
+      });
     const marginRisk = rows.filter((p) => toNumber(p.potential_profit) < 0);
     const setupGap = rows.filter((p) => toNumber(p.current_stock) <= 10 && toNumber(p.reorder_level) <= 0);
     const salesVelocityDaily = toNumber(summary.total_units_sold_30d) / 30;
@@ -671,6 +738,7 @@ export default function Inventory() {
       reorderQueue,
       hotRisk,
       deadCash,
+      expiryRisk,
       marginRisk,
       setupGap,
       coverDays,
@@ -879,6 +947,12 @@ export default function Inventory() {
           <SummaryCard title="Sold 30d" value={summary.total_units_sold_30d || 0} subtitle="Monthly movement" c={c} />
           <SummaryCard title="Low Stock" value={summary.low_stock_count || 0} subtitle="Needs attention" c={c} />
           <SummaryCard title="Out of Stock" value={summary.out_of_stock_count || 0} subtitle="Immediate action" c={c} />
+          <SummaryCard
+            title="Expiry Watch"
+            value={(summary.expiry_watch_count || 0) + (summary.expiry_critical_count || 0) + (summary.expired_count || 0)}
+            subtitle="Inside 7 months or expired"
+            c={c}
+          />
           <SummaryCard title="Dead Stock" value={summary.dead_stock_count || 0} subtitle="Sleeping cash" c={c} />
         </div>
 
@@ -915,6 +989,15 @@ export default function Inventory() {
             active={actionFilter === "hot_risk"}
             c={c}
             onClick={() => setActionFilter(actionFilter === "hot_risk" ? "" : "hot_risk")}
+          />
+          <OperationCard
+            title="Expiry Watch"
+            value={operations.expiryRisk.length}
+            subtitle="Expired, missing, or inside 7 months"
+            color="#dc2626"
+            active={actionFilter === "expiry"}
+            c={c}
+            onClick={() => setActionFilter(actionFilter === "expiry" ? "" : "expiry")}
           />
           <OperationCard
             title="Dead Stock Cash"
@@ -991,6 +1074,17 @@ export default function Inventory() {
                   label="Hot SKU risk"
                   note={`Approx cover: ${getCoverageDays(item) ?? "unknown"} days | 7d sold ${item.units_sold_7d}`}
                   color="#3b82f6"
+                  c={c}
+                  onClick={() => setSelectedProduct(item)}
+                />
+              ))}
+              {operations.expiryRisk.slice(0, 6).map((item) => (
+                <ActionQueueItem
+                  key={`expiry-${item.id}`}
+                  item={item}
+                  label={getExpiryBadge(item.expiry_status, item.days_to_expiry, isDark).label}
+                  note={`Expires ${formatExpiryDate(item.expiry_date)} | status ${item.expiry_status || "unknown"}`}
+                  color={item.expiry_status === "watch" ? "#3b82f6" : "#dc2626"}
                   c={c}
                   onClick={() => setSelectedProduct(item)}
                 />
@@ -1168,7 +1262,7 @@ export default function Inventory() {
                 style={{
                   width: "100%",
                   borderCollapse: "collapse",
-                  minWidth: 2140,
+                  minWidth: 2260,
                   tableLayout: "fixed",
                 }}
               >
@@ -1181,6 +1275,7 @@ export default function Inventory() {
                     <th style={{ ...thStyle(c), width: 90, textAlign: "right" }}>Stock</th>
                     <th style={{ ...thStyle(c), width: 90, textAlign: "right" }}>Reorder</th>
                     <th style={{ ...thStyle(c), width: 130 }}>Stock Status</th>
+                    <th style={{ ...thStyle(c), width: 130 }}>Expiry</th>
                     <th style={{ ...thStyle(c), width: 130 }}>Movement</th>
                     <th style={{ ...thStyle(c), width: 130, textAlign: "right" }}>Stock Value</th>
                     <th style={{ ...thStyle(c), width: 130, textAlign: "right" }}>Potential Profit</th>
@@ -1196,6 +1291,7 @@ export default function Inventory() {
                 <tbody>
                   {filtered.map((row, idx) => {
                     const stockBadge = getStockBadge(row.stock_status, isDark);
+                    const expiryBadge = getExpiryBadge(row.expiry_status, row.days_to_expiry, isDark);
                     const movementBadge = getMovementBadge(row.movement_status, isDark);
                     const channelBadge = getChannelBadge(row.last_sale_channel, isDark);
                     const isSelected = selectedProduct?.id === row.id;
@@ -1243,6 +1339,13 @@ export default function Inventory() {
 
                         <td style={{ ...tdStyle, width: 130 }}>
                           <Badge badge={stockBadge} />
+                        </td>
+
+                        <td style={{ ...tdStyle, width: 130 }}>
+                          <Badge badge={expiryBadge} />
+                          <div style={{ marginTop: 4, fontSize: 11, color: c.textMuted }}>
+                            {formatExpiryDate(row.expiry_date)}
+                          </div>
                         </td>
 
                         <td style={{ ...tdStyle, width: 130 }}>
@@ -1428,6 +1531,12 @@ export default function Inventory() {
                 >
                   <DrawerStat label="Current Stock" value={selectedProduct.current_stock} c={c} />
                   <DrawerStat label="Reorder Level" value={selectedProduct.reorder_level} c={c} />
+                  <DrawerStat label="Expiry Date" value={formatExpiryDate(selectedProduct.expiry_date)} c={c} />
+                  <DrawerStat
+                    label="Days To Expiry"
+                    value={selectedProduct.days_to_expiry ?? "Missing"}
+                    c={c}
+                  />
                   <DrawerStat label="Stock Value" value={formatCurrency(selectedProduct.stock_value)} c={c} />
                   <DrawerStat label="Potential Profit" value={formatCurrency(selectedProduct.potential_profit)} c={c} />
                   <DrawerStat label="Sold 7 Days" value={selectedProduct.units_sold_7d} c={c} />

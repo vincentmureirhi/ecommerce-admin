@@ -950,6 +950,16 @@ function InventoryCard({ isDark, c, inventory }) {
           color="#ff5f57"
         />
         <MetricRow
+          label="Expiry Watch"
+          value={inventory?.expiry_watch || 0}
+          color="#dc2626"
+        />
+        <MetricRow
+          label="Expired"
+          value={inventory?.expired || 0}
+          color="#991b1b"
+        />
+        <MetricRow
           label="Fast Moving"
           value={inventory?.fast_moving || 0}
           color="#10b981"

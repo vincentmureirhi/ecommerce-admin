@@ -483,6 +483,10 @@ export const dashboardService = {
       low_stock: products.filter((p) => p.stock_status === "low_stock").length,
       reorder_now: products.filter((p) => p.stock_status === "reorder_now").length,
       out_of_stock: products.filter((p) => p.stock_status === "out_of_stock").length,
+      expiry_watch: products.filter((p) =>
+        ["expired", "critical", "warning", "watch"].includes(p.expiry_status)
+      ).length,
+      expired: products.filter((p) => p.expiry_status === "expired").length,
       fast_moving: products.filter((p) => p.movement_status === "fast_moving").length,
       slow_moving: products.filter((p) => p.movement_status === "slow_moving").length,
       dead_stock: products.filter((p) => p.movement_status === "dead_stock").length,

@@ -59,10 +59,29 @@ function roleBadgeStyle(role, isDark) {
 const EMPTY_FORM = {
   name: "",
   email: "",
-  username: "",
   password: "",
   role: "admin",
 };
+
+function isProtectedSuperAdmin(admin) {
+  return admin?.role === "superuser" || admin?.role === "superadmin";
+}
+
+function displayRole(role) {
+  if (role === "superuser" || role === "superadmin") return "Super Admin";
+  if (role === "admin") return "Admin";
+  return "Staff";
+}
+
+function splitNameForPayload(name) {
+  const parts = String(name || "").trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return { first_name: "", last_name: "" };
+  if (parts.length === 1) return { first_name: parts[0], last_name: "-" };
+  return {
+    first_name: parts.slice(0, -1).join(" "),
+    last_name: parts[parts.length - 1],
+  };
+}
 
 function ModalOverlay({ children, onClose }) {
   return (
@@ -144,7 +163,6 @@ export default function AdminManagement() {
     setForm({
       name: admin.name || "",
       email: admin.email || "",
-      username: admin.username || "",
       password: "",
       role: admin.role || "admin",
     });
@@ -159,10 +177,18 @@ export default function AdminManagement() {
     setFormLoading(true);
     setFormErr("");
 
+    const nameParts = splitNameForPayload(form.name);
+    if (!nameParts.first_name || !nameParts.last_name) {
+      setFormErr("Enter the admin user's full name.");
+      setFormLoading(false);
+      return;
+    }
+
     const payload = {
       name: form.name.trim(),
+      first_name: nameParts.first_name,
+      last_name: nameParts.last_name,
       email: form.email.trim(),
-      username: form.username.trim(),
       role: form.role,
     };
 
@@ -194,7 +220,7 @@ export default function AdminManagement() {
       showSuccess("Role updated");
       loadAdmins();
     } catch (e) {
-      setErr(e?.message || "Failed to change role");
+      setErr(e?.response?.data?.message || e?.message || "Failed to change role");
     } finally {
       setRoleChangingId(null);
     }
@@ -209,7 +235,7 @@ export default function AdminManagement() {
       showSuccess("Admin user deactivated");
       loadAdmins();
     } catch (e) {
-      setErr(e?.message || "Failed to deactivate admin user");
+      setErr(e?.response?.data?.message || e?.message || "Failed to deactivate admin user");
       setDeactivatingId(null);
     } finally {
       setDeactivateLoading(false);
@@ -231,10 +257,10 @@ export default function AdminManagement() {
       >
         <div>
           <h1 style={{ margin: "0 0 6px 0", fontSize: 30, fontWeight: 800, color: c.text }}>
-            👨‍💼 Admin Users
+            Admin Users
           </h1>
           <p style={{ margin: 0, color: c.textMuted, fontSize: 13 }}>
-            Manage admin and superuser accounts — superadmin only
+            Manage admin and superadmin access with account-level safeguards.
           </p>
         </div>
 
@@ -270,7 +296,7 @@ export default function AdminManagement() {
             fontWeight: 600,
           }}
         >
-          ✓ {successMsg}
+          Success: {successMsg}
         </div>
       )}
 
@@ -286,7 +312,7 @@ export default function AdminManagement() {
             marginBottom: 20,
           }}
         >
-          ⚠️ {err}
+          {err}
         </div>
       )}
 
@@ -348,7 +374,7 @@ export default function AdminManagement() {
             <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 820 }}>
               <thead>
                 <tr style={{ background: c.headerBg, borderBottom: `1px solid ${c.border}` }}>
-                  <th style={thStyle(c)}>Name / Username</th>
+                  <th style={thStyle(c)}>Admin User</th>
                   <th style={thStyle(c)}>Email</th>
                   <th style={thStyle(c)}>Role</th>
                   <th style={thStyle(c)}>Status</th>
@@ -363,6 +389,7 @@ export default function AdminManagement() {
                   const statusBadge = badgeStyle(adminStatus, isDark);
                   const rBadge = roleBadgeStyle(admin.role, isDark);
                   const isActive = adminStatus === "active";
+                  const protectedAdmin = isProtectedSuperAdmin(admin);
 
                   return (
                     <tr
@@ -373,7 +400,7 @@ export default function AdminManagement() {
                       }}
                     >
                       <td style={tdPrimary(c)}>
-                        {admin.name || admin.username || "—"}
+                        {admin.name || admin.username || "-"}
                         {admin.username && admin.name && (
                           <div style={{ fontSize: 11, color: c.textMuted, fontWeight: 400 }}>
                             @{admin.username}
@@ -396,7 +423,7 @@ export default function AdminManagement() {
                             textTransform: "capitalize",
                           }}
                         >
-                          {admin.role}
+                          {displayRole(admin.role)}
                         </span>
                       </td>
 
@@ -425,7 +452,7 @@ export default function AdminManagement() {
                       <td style={{ ...tdBase, textAlign: "center" }}>
                         <select
                           value={admin.role}
-                          disabled={roleChangingId === admin.id}
+                          disabled={roleChangingId === admin.id || protectedAdmin}
                           onChange={(e) => handleRoleChange(admin.id, e.target.value)}
                           style={{
                             padding: "5px 8px",
@@ -434,11 +461,12 @@ export default function AdminManagement() {
                             fontSize: 12,
                             background: c.inputBg,
                             color: c.text,
-                            cursor: "pointer",
+                            cursor: protectedAdmin ? "not-allowed" : "pointer",
+                            opacity: protectedAdmin ? 0.65 : 1,
                           }}
                         >
                           <option value="admin">Admin</option>
-                          <option value="superuser">Superuser</option>
+                          <option value="superuser">Super Admin</option>
                           <option value="staff">Staff</option>
                         </select>
                       </td>
@@ -453,7 +481,7 @@ export default function AdminManagement() {
                             Edit
                           </button>
 
-                          {isActive && (
+                          {isActive && !protectedAdmin && (
                             <button
                               type="button"
                               onClick={() => setDeactivatingId(admin.id)}
@@ -461,6 +489,22 @@ export default function AdminManagement() {
                             >
                               Deactivate
                             </button>
+                          )}
+                          {protectedAdmin && (
+                            <span
+                              style={{
+                                display: "inline-flex",
+                                alignItems: "center",
+                                padding: "6px 10px",
+                                borderRadius: 999,
+                                background: isDark ? "rgba(245,158,11,0.18)" : "#fffbeb",
+                                color: isDark ? "#fbbf24" : "#b45309",
+                                fontSize: 11,
+                                fontWeight: 800,
+                              }}
+                            >
+                              Protected
+                            </span>
                           )}
                         </div>
                       </td>
@@ -552,17 +596,6 @@ export default function AdminManagement() {
               </div>
 
               <div style={{ marginBottom: 14 }}>
-                <label style={labelStyle(c)}>Username *</label>
-                <input
-                  required
-                  value={form.username}
-                  onChange={(e) => setForm((f) => ({ ...f, username: e.target.value }))}
-                  placeholder="e.g. johndoe"
-                  style={inputStyle(c)}
-                />
-              </div>
-
-              <div style={{ marginBottom: 14 }}>
                 <label style={labelStyle(c)}>
                   Password {formMode === "edit" && "(leave blank to keep unchanged)"}
                   {formMode === "create" && " *"}
@@ -585,7 +618,7 @@ export default function AdminManagement() {
                   style={inputStyle(c)}
                 >
                   <option value="admin">Admin</option>
-                  <option value="superuser">Superuser</option>
+                  <option value="superuser">Super Admin</option>
                   <option value="staff">Staff</option>
                 </select>
               </div>
