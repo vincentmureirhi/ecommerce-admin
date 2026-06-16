@@ -423,7 +423,7 @@ export default function Dashboard() {
                   title="Payment Rate"
                   value={`${kpis.payment_success_rate || 0}%`}
                   trend={kpis.payment_trend}
-                  subtitle={`${kpis.failed_payments || 0} failed`}
+                  subtitle={`${paymentHealth?.successful_payments || 0} paid | ${kpis.failed_payments || 0} failed`}
                   color={kpis.payment_success_rate >= 80 ? '#10b981' : '#ff9500'}
                   onClick={() => navigate('/payments')}
                 />
@@ -442,11 +442,11 @@ export default function Dashboard() {
                   isDark={isDark}
                   c={c}
                   icon="⚠️"
-                  title="Low Stock"
-                  value={kpis.low_stock || 0}
+                  title="Expiry Risk"
+                  value={(inventoryIntelligence?.expired || 0) + (inventoryIntelligence?.expiry_critical || 0) + (inventoryIntelligence?.expiry_warning || 0)}
                   trend={null}
-                  subtitle="Below reorder level"
-                  color="#ff9500"
+                  subtitle={`${inventoryIntelligence?.expired || 0} expired | ${inventoryIntelligence?.expiry_critical || 0} critical`}
+                  color="#dc2626"
                   onClick={() => navigate('/inventory')}
                 />
                 <KPICard

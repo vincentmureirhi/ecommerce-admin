@@ -948,9 +948,9 @@ export default function Inventory() {
           <SummaryCard title="Low Stock" value={summary.low_stock_count || 0} subtitle="Needs attention" c={c} />
           <SummaryCard title="Out of Stock" value={summary.out_of_stock_count || 0} subtitle="Immediate action" c={c} />
           <SummaryCard
-            title="Expiry Watch"
+            title="Expiry Alarm"
             value={(summary.expiry_watch_count || 0) + (summary.expiry_critical_count || 0) + (summary.expired_count || 0)}
-            subtitle="Inside 7 months or expired"
+            subtitle={`${summary.expired_count || 0} expired | ${summary.expiry_critical_count || 0} critical`}
             c={c}
           />
           <SummaryCard title="Dead Stock" value={summary.dead_stock_count || 0} subtitle="Sleeping cash" c={c} />
@@ -991,9 +991,9 @@ export default function Inventory() {
             onClick={() => setActionFilter(actionFilter === "hot_risk" ? "" : "hot_risk")}
           />
           <OperationCard
-            title="Expiry Watch"
+            title="Expiry Alarm"
             value={operations.expiryRisk.length}
-            subtitle="Expired, missing, or inside 7 months"
+            subtitle="Expired, missing, or short dated"
             color="#dc2626"
             active={actionFilter === "expiry"}
             c={c}
@@ -1052,7 +1052,7 @@ export default function Inventory() {
           }
           c={c}
         >
-          {operations.reorderQueue.length === 0 && operations.hotRisk.length === 0 ? (
+          {operations.reorderQueue.length === 0 && operations.hotRisk.length === 0 && operations.expiryRisk.length === 0 ? (
             <div style={{ color: c.textMuted, fontSize: 13 }}>No urgent warehouse actions right now.</div>
           ) : (
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 12 }}>
