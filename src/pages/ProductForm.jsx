@@ -4,6 +4,7 @@ import { createProduct, getProductById, updateProduct } from "../api/products";
 import { listCategories } from "../api/categories";
 import { listSuppliers } from "../api/suppliers";
 import { listPricingRules, listPricingGroups } from "../api/pricing";
+import { listStockPools, updateStockPool } from "../api/inventory";
 import { useTheme } from "../context/ThemeContext";
 
 const CLOUDINARY_CLOUD_NAME = "dwvmsjgvd";
@@ -204,6 +205,7 @@ export default function ProductForm() {
   const [categories, setCategories] = useState([]);
   const [pricingRules, setPricingRules] = useState([]);
   const [pricingGroups, setPricingGroups] = useState([]);
+  const [stockPools, setStockPools] = useState([]);
   const [err, setErr] = useState("");
   const [loading, setLoading] = useState(true);
   const [uploadedImages, setUploadedImages] = useState([]);
@@ -230,6 +232,10 @@ export default function ProductForm() {
     cost_price: "",
     reorder_level: "10",
     current_stock: "0",
+    stock_source: "product",
+    stock_pool_id: "",
+    stock_pool_note: "",
+    stock_pool_total_stock: "",
     stock_status_override: "in_stock",
     expiry_date: "",
     is_combo_eligible: false,
@@ -261,6 +267,11 @@ export default function ProductForm() {
     };
   }, [form.retail_price, form.cost_price]);
 
+  const selectedStockPool = useMemo(
+    () => stockPools.find((pool) => String(pool.id) === String(form.stock_pool_id)) || null,
+    [stockPools, form.stock_pool_id]
+  );
+
   function updateField(key, value) {
     setForm((prev) => ({
       ...prev,
@@ -272,16 +283,52 @@ export default function ProductForm() {
     updateField(key, normalizeMoneyInput(value));
   }
 
+  function updateStockSource(value) {
+    setForm((prev) => {
+      if (value === "pool") {
+        const poolId = prev.stock_pool_id || (stockPools[0]?.id ? String(stockPools[0].id) : "");
+        const pool = stockPools.find((item) => String(item.id) === String(poolId));
+
+        return {
+          ...prev,
+          stock_source: "pool",
+          stock_pool_id: poolId,
+          stock_pool_total_stock: pool ? String(pool.total_stock ?? 0) : prev.stock_pool_total_stock,
+          current_stock: "0",
+        };
+      }
+
+      return {
+        ...prev,
+        stock_source: "product",
+        stock_pool_id: "",
+        stock_pool_note: "",
+        stock_pool_total_stock: "",
+      };
+    });
+  }
+
+  function updateStockPoolSelection(poolId) {
+    const pool = stockPools.find((item) => String(item.id) === String(poolId));
+    setForm((prev) => ({
+      ...prev,
+      stock_pool_id: poolId,
+      stock_pool_total_stock: pool ? String(pool.total_stock ?? 0) : "",
+    }));
+  }
+
   function updateStockStatus(value) {
     setForm((prev) => ({
       ...prev,
       stock_status_override: value,
       current_stock:
-        value === "out_of_stock"
+        prev.stock_source === "pool"
           ? "0"
-          : Number(prev.current_stock) > 0
-            ? prev.current_stock
-            : "1",
+          : value === "out_of_stock"
+            ? "0"
+            : Number(prev.current_stock) > 0
+              ? prev.current_stock
+              : "1",
     }));
   }
 
@@ -306,15 +353,35 @@ export default function ProductForm() {
       return false;
     }
 
-    const stock = Number(form.current_stock);
-    if (!Number.isFinite(stock) || stock < 0) {
-      setErr("Current stock cannot be negative.");
-      return false;
-    }
+    const usesSharedPool = form.stock_source === "pool";
 
-    if (form.stock_status_override !== "out_of_stock" && stock <= 0) {
-      setErr("Current stock must be greater than 0 for products marked in stock or limited stock.");
-      return false;
+    if (usesSharedPool) {
+      if (!form.stock_pool_id) {
+        setErr("Choose a shared stock pool for this product.");
+        return false;
+      }
+
+      const poolStock = Number(form.stock_pool_total_stock);
+      if (!Number.isFinite(poolStock) || poolStock < 0) {
+        setErr("Shared stock pool quantity cannot be negative.");
+        return false;
+      }
+
+      if (form.stock_status_override !== "out_of_stock" && poolStock <= 0) {
+        setErr("Shared stock pool must be greater than 0 for products marked in stock or limited stock.");
+        return false;
+      }
+    } else {
+      const stock = Number(form.current_stock);
+      if (!Number.isFinite(stock) || stock < 0) {
+        setErr("Current stock cannot be negative.");
+        return false;
+      }
+
+      if (form.stock_status_override !== "out_of_stock" && stock <= 0) {
+        setErr("Current stock must be greater than 0 for products marked in stock or limited stock.");
+        return false;
+      }
     }
 
     if (!form.expiry_date) {
@@ -354,11 +421,12 @@ export default function ProductForm() {
       setLoading(true);
       setErr("");
 
-      const [supplierResponse, categoryResponse, rulesResponse, groupsResponse] = await Promise.all([
+      const [supplierResponse, categoryResponse, rulesResponse, groupsResponse, stockPoolsResponse] = await Promise.all([
         listSuppliers(),
         listCategories(),
         listPricingRules().catch(() => ({ data: [] })),
         listPricingGroups().catch(() => ({ data: [] })),
+        listStockPools().catch(() => ({ data: [] })),
       ]);
 
       const supplierRows =
@@ -373,11 +441,17 @@ export default function ProductForm() {
 
       const ruleRows = rulesResponse?.data || rulesResponse;
       const groupRows = groupsResponse?.data || groupsResponse;
+      const stockPoolRows =
+        stockPoolsResponse?.data?.data ||
+        stockPoolsResponse?.data ||
+        stockPoolsResponse ||
+        [];
 
       setSuppliers(Array.isArray(supplierRows) ? supplierRows : []);
       setCategories(Array.isArray(categoryRows) ? categoryRows : []);
       setPricingRules(Array.isArray(ruleRows) ? ruleRows : []);
       setPricingGroups(Array.isArray(groupRows) ? groupRows : []);
+      setStockPools(Array.isArray(stockPoolRows) ? stockPoolRows : []);
 
       if (id) {
         const productResponse = await getProductById(id);
@@ -405,7 +479,16 @@ export default function ProductForm() {
             selling_unit_label: product.selling_unit_label || "piece",
             cost_price: product.cost_price != null ? String(product.cost_price) : "",
             reorder_level: String(product.reorder_level || 10),
-            current_stock: String(product.current_stock || 0),
+            current_stock: String(
+              product.stock_source === "pool"
+                ? product.product_current_stock || 0
+                : product.current_stock || 0
+            ),
+            stock_source: product.stock_source || "product",
+            stock_pool_id: product.stock_pool_id ? String(product.stock_pool_id) : "",
+            stock_pool_note: product.stock_pool_note || "",
+            stock_pool_total_stock:
+              product.stock_pool_total_stock != null ? String(product.stock_pool_total_stock) : "",
             stock_status_override: deriveStockStatus(product),
             expiry_date: product.expiry_date ? String(product.expiry_date).slice(0, 10) : "",
             is_combo_eligible: product.is_combo_eligible === true,
@@ -558,10 +641,11 @@ export default function ProductForm() {
 
     if (!validateForm()) return;
 
-    setSubmitting(true);
+      setSubmitting(true);
 
     try {
       const stockStatus = form.stock_status_override || "in_stock";
+      const usesSharedPool = form.stock_source === "pool";
       const payload = {
         name: form.name.trim(),
         description: form.description.trim() || null,
@@ -577,7 +661,14 @@ export default function ProductForm() {
         selling_unit_label: form.selling_unit_label.trim() || "piece",
         cost_price: moneyPayload(form.cost_price, null),
         reorder_level: Math.max(0, Number(form.reorder_level) || 10),
-        current_stock: stockStatus === "out_of_stock" ? 0 : Math.max(0, Number(form.current_stock) || 0),
+        current_stock: usesSharedPool
+          ? 0
+          : stockStatus === "out_of_stock"
+            ? 0
+            : Math.max(0, Number(form.current_stock) || 0),
+        stock_source: usesSharedPool ? "pool" : "product",
+        stock_pool_id: usesSharedPool ? parseInt(form.stock_pool_id, 10) : null,
+        stock_pool_note: usesSharedPool ? form.stock_pool_note.trim() || null : null,
         stock_status_override: stockStatus,
         expiry_date: form.expiry_date,
         is_combo_eligible: form.is_combo_eligible === true,
@@ -586,6 +677,23 @@ export default function ProductForm() {
         image_url: form.image_url || null,
         pricing_rule_id: form.pricing_rule_id ? parseInt(form.pricing_rule_id, 10) : null,
       };
+
+      if (usesSharedPool && selectedStockPool) {
+        const nextPoolTotal = Math.max(0, Number(form.stock_pool_total_stock) || 0);
+        const currentPoolTotal = Math.max(0, Number(selectedStockPool.total_stock) || 0);
+
+        if (nextPoolTotal !== currentPoolTotal) {
+          await updateStockPool(selectedStockPool.id, {
+            name: selectedStockPool.name,
+            sku: selectedStockPool.sku || null,
+            description: selectedStockPool.description || null,
+            total_stock: nextPoolTotal,
+            reorder_level: Math.max(0, Number(selectedStockPool.reorder_level) || 0),
+            stock_status_override: selectedStockPool.stock_status_override || null,
+            is_active: selectedStockPool.is_active !== false,
+          });
+        }
+      }
 
       if (id) {
         await updateProduct(id, payload);
@@ -972,6 +1080,21 @@ export default function ProductForm() {
           >
             <FormGrid>
               <Field
+                label="Stock source"
+                hint="Use exact product stock for normal items. Use shared pool stock for assorted items like braid colours and sizes."
+                c={c}
+              >
+                <select
+                  value={form.stock_source}
+                  onChange={(e) => updateStockSource(e.target.value)}
+                  style={inputStyle(c, isDark)}
+                >
+                  <option value="product">Exact product stock</option>
+                  <option value="pool">Shared stock pool</option>
+                </select>
+              </Field>
+
+              <Field
                 label="Storefront stock label"
                 hint="Controls the customer-facing badge. Orders still depend on the actual current stock."
                 c={c}
@@ -987,17 +1110,76 @@ export default function ProductForm() {
                 </select>
               </Field>
 
-              <Field label="Current stock" c={c}>
+              {form.stock_source === "pool" && (
+                <Field
+                  label="Shared pool"
+                  required
+                  hint="All linked products deduct from this same stock count."
+                  c={c}
+                >
+                  <select
+                    value={form.stock_pool_id}
+                    onChange={(e) => updateStockPoolSelection(e.target.value)}
+                    style={inputStyle(c, isDark)}
+                  >
+                    <option value="">Choose stock pool</option>
+                    {stockPools.map((pool) => (
+                      <option key={pool.id} value={pool.id}>
+                        {pool.name} - {Number(pool.total_stock || 0).toLocaleString()} available
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+              )}
+
+              <Field
+                label={form.stock_source === "pool" ? "Product exact stock" : "Current stock"}
+                hint={form.stock_source === "pool" ? "Kept at 0 because this variant sells from the shared pool." : ""}
+                c={c}
+              >
                 <input
                   type="number"
                   min="0"
                   value={form.current_stock}
                   onChange={(e) => updateField("current_stock", e.target.value)}
                   placeholder="0"
-                  disabled={form.stock_status_override === "out_of_stock"}
+                  disabled={form.stock_source === "pool" || form.stock_status_override === "out_of_stock"}
                   style={inputStyle(c, isDark)}
                 />
               </Field>
+
+              {form.stock_source === "pool" && (
+                <>
+                  <Field
+                    label="Shared pool total"
+                    required
+                    hint="For braids, enter the total assorted braid stock, for example 22000."
+                    c={c}
+                  >
+                    <input
+                      type="number"
+                      min="0"
+                      value={form.stock_pool_total_stock}
+                      onChange={(e) => updateField("stock_pool_total_stock", e.target.value)}
+                      placeholder="22000"
+                      style={inputStyle(c, isDark)}
+                    />
+                  </Field>
+
+                  <Field
+                    label="Pool note"
+                    hint="Optional internal note, for example: colours counted as one assorted braid pool."
+                    c={c}
+                  >
+                    <input
+                      value={form.stock_pool_note}
+                      onChange={(e) => updateField("stock_pool_note", e.target.value)}
+                      placeholder="Uses assorted braid stock"
+                      style={inputStyle(c, isDark)}
+                    />
+                  </Field>
+                </>
+              )}
 
               <Field
                 label="Expiry date"

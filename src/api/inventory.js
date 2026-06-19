@@ -36,3 +36,18 @@ export async function updateInventoryReorderLevel(id, reorderLevel) {
 export async function updateInventory(id, payload) {
   return { success: true, id, payload };
 }
+
+export async function listStockPools() {
+  const res = await client.get("/inventory/stock-pools");
+  return res.data;
+}
+
+export async function createStockPool(payload) {
+  const res = await client.post("/inventory/stock-pools", payload);
+  return res.data;
+}
+
+export async function updateStockPool(id, payload) {
+  const res = await client.put(`/inventory/stock-pools/${id}`, payload);
+  return res.data;
+}
