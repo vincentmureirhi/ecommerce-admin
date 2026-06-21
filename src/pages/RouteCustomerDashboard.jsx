@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useRouteCustomerAuth } from "../context/RouteCustomerAuthContext.jsx";
 import { useTheme } from "../context/ThemeContext";
+import { changeRouteCustomerPassword } from "../api/routeCustomerPortal";
 
 const API_BASE = import.meta.env.VITE_API_URL || "/api";
 
@@ -12,10 +13,25 @@ function formatMoney(value) {
 }
 
 function formatDateTime(value) {
-  if (!value) return "—";
+  if (!value) return "-";
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return value;
   return d.toLocaleString();
+}
+
+function formatRouteOrderState(status) {
+  const normalized = String(status || "").toLowerCase();
+  const labels = {
+    pending: "Captured for route planning",
+    processing: "Being prepared at the shop",
+    packed: "Packed for the route",
+    dispatched: "Out with delivery team",
+    completed: "Delivered",
+    delivered: "Delivered",
+    cancelled: "Cancelled",
+  };
+
+  return labels[normalized] || status || "Captured";
 }
 
 function clampPercent(value) {
@@ -135,6 +151,40 @@ function NoticeCard({ notice, colors, isDark }) {
   );
 }
 
+function DetailLine({ label, value, colors }) {
+  return (
+    <div>
+      <div style={{ fontSize: 12, fontWeight: 800, color: colors.textMuted }}>{label}</div>
+      <div style={{ marginTop: 4, color: colors.text, fontWeight: 800 }}>{value || "-"}</div>
+    </div>
+  );
+}
+
+function PasswordInput({ label, value, onChange, autoComplete, colors }) {
+  return (
+    <label style={{ display: "grid", gap: 7 }}>
+      <span style={{ fontSize: 12, color: colors.textMuted, fontWeight: 900 }}>{label}</span>
+      <input
+        type="password"
+        value={value}
+        onChange={onChange}
+        autoComplete={autoComplete}
+        style={{
+          width: "100%",
+          borderRadius: 13,
+          border: `1px solid ${colors.border}`,
+          background: colors.buttonBg,
+          color: colors.text,
+          padding: "12px 13px",
+          outline: "none",
+          fontSize: 14,
+          boxSizing: "border-box",
+        }}
+      />
+    </label>
+  );
+}
+
 export default function RouteCustomerDashboard() {
   const routeAuth = useRouteCustomerAuth?.() || {};
   const theme = useTheme?.() || {};
@@ -145,12 +195,26 @@ export default function RouteCustomerDashboard() {
 
   const routeCustomerToken = routeAuth?.routeCustomerToken || null;
   const routeCustomerUser = routeAuth?.routeCustomerUser || null;
+  const routeCustomerAccount = routeAuth?.routeCustomerAccount || null;
+  const setRouteCustomerAccount =
+    typeof routeAuth?.setRouteCustomerAccount === "function"
+      ? routeAuth.setRouteCustomerAccount
+      : () => {};
   const routeLogout =
     typeof routeAuth?.logout === "function" ? routeAuth.logout : () => {};
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [dashboard, setDashboard] = useState(null);
+  const [passwordOpen, setPasswordOpen] = useState(false);
+  const [passwordSaving, setPasswordSaving] = useState(false);
+  const [passwordMessage, setPasswordMessage] = useState("");
+  const [passwordError, setPasswordError] = useState("");
+  const [passwordForm, setPasswordForm] = useState({
+    current_password: "",
+    new_password: "",
+    confirm_password: "",
+  });
 
   const colors = useMemo(
     () => ({
@@ -213,6 +277,81 @@ export default function RouteCustomerDashboard() {
   function handleLogout() {
     routeLogout();
     window.location.href = "/route-login";
+  }
+
+  function updatePasswordForm(field, value) {
+    setPasswordForm((prev) => ({ ...prev, [field]: value }));
+    setPasswordError("");
+    setPasswordMessage("");
+  }
+
+  async function handlePasswordSubmit(event) {
+    event.preventDefault();
+
+    if (passwordSaving) return;
+
+    const payload = {
+      current_password: passwordForm.current_password,
+      new_password: passwordForm.new_password,
+      confirm_password: passwordForm.confirm_password,
+    };
+
+    if (!payload.current_password || !payload.new_password || !payload.confirm_password) {
+      setPasswordError("Fill in all password fields.");
+      return;
+    }
+
+    if (payload.new_password !== payload.confirm_password) {
+      setPasswordError("The new password and confirmation do not match.");
+      return;
+    }
+
+    if (payload.new_password.length < 8) {
+      setPasswordError("Use at least 8 characters for the new password.");
+      return;
+    }
+
+    setPasswordSaving(true);
+    setPasswordError("");
+    setPasswordMessage("");
+
+    try {
+      await changeRouteCustomerPassword(payload);
+
+      const nextAccount = {
+        ...(dashboard?.account || routeCustomerAccount || {}),
+        must_change_password: false,
+      };
+
+      setDashboard((prev) =>
+        prev
+          ? {
+              ...prev,
+              account: nextAccount,
+              route_insights: {
+                ...(prev.route_insights || {}),
+                suggested_action:
+                  prev.route_insights?.suggested_action === "Change your password"
+                    ? "Prepare your next route order"
+                    : prev.route_insights?.suggested_action,
+              },
+              portal_notices: (prev.portal_notices || []).filter(
+                (notice) => notice?.type !== "security"
+              ),
+            }
+          : prev
+      );
+      setRouteCustomerAccount(nextAccount);
+      setPasswordForm({ current_password: "", new_password: "", confirm_password: "" });
+      setPasswordMessage("Password updated. Your route account is now secured.");
+      setPasswordOpen(false);
+    } catch (err) {
+      setPasswordError(
+        err?.response?.data?.message || err?.message || "Failed to change password."
+      );
+    } finally {
+      setPasswordSaving(false);
+    }
   }
 
   if (loading) {
@@ -305,6 +444,10 @@ export default function RouteCustomerDashboard() {
   const regionRankText = regionRank?.region_rank
     ? `#${regionRank.region_rank} of ${regionRank.total_ranked_customers || "-"}`
     : "-";
+  const callRepHref = assignedRep?.phone_number
+    ? `tel:${assignedRep.phone_number}`
+    : null;
+  const securityNeedsAttention = Boolean(account?.must_change_password);
 
   return (
     <div
@@ -377,7 +520,7 @@ export default function RouteCustomerDashboard() {
                 cursor: "pointer",
               }}
             >
-              {isDark ? "☀️ Light" : "🌙 Dark"}
+              {isDark ? "Light mode" : "Dark mode"}
             </button>
 
             <button
@@ -405,21 +548,249 @@ export default function RouteCustomerDashboard() {
           margin: "0 auto",
           padding: 16,
         }}
-      >
-        {account?.must_change_password ? (
+      >        <section
+          style={{
+            marginBottom: 18,
+            borderRadius: 24,
+            padding: 20,
+            overflow: "hidden",
+            border: `1px solid ${isDark ? "#1f2937" : "#dbeafe"}`,
+            background: isDark
+              ? "linear-gradient(135deg, #020617 0%, #0f172a 52%, #172554 100%)"
+              : "linear-gradient(135deg, #eff6ff 0%, #ffffff 48%, #ecfeff 100%)",
+            boxShadow: isDark
+              ? "0 24px 60px rgba(0,0,0,0.28)"
+              : "0 24px 60px rgba(37,99,235,0.10)",
+          }}
+        >
           <div
             style={{
-              marginBottom: 16,
-              padding: 14,
-              borderRadius: 14,
-              background: colors.dangerBg,
-              border: `1px solid ${colors.dangerBorder}`,
-              color: colors.dangerText,
-              fontWeight: 700,
+              display: "grid",
+              gap: 18,
+              gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))",
+              alignItems: "stretch",
             }}
           >
-            Your account still requires a password change after first login.
+            <div style={{ display: "grid", gap: 16 }}>
+              <div
+                style={{
+                  width: "fit-content",
+                  borderRadius: 999,
+                  padding: "7px 11px",
+                  border: `1px solid ${isDark ? "#334155" : "#bfdbfe"}`,
+                  color: isDark ? "#bfdbfe" : "#1d4ed8",
+                  fontSize: 12,
+                  fontWeight: 900,
+                  letterSpacing: 0,
+                }}
+              >
+                ROUTE ACCOUNT
+              </div>
+
+              <div>
+                <div
+                  style={{
+                    fontSize: "clamp(30px, 6vw, 58px)",
+                    lineHeight: 1,
+                    fontWeight: 950,
+                    color: colors.text,
+                  }}
+                >
+                  {customer?.name || "Route customer"}
+                </div>
+                <div style={{ marginTop: 10, color: colors.textMuted, fontSize: 16 }}>
+                  {summary.location_name || "Route location pending"} - {summary.region_name || "Region pending"}
+                </div>
+              </div>
+
+              <div
+                style={{
+                  display: "flex",
+                  gap: 10,
+                  flexWrap: "wrap",
+                }}
+              >
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPasswordOpen((open) => !open);
+                    setPasswordError("");
+                    setPasswordMessage("");
+                  }}
+                  style={{
+                    border: "none",
+                    borderRadius: 14,
+                    padding: "12px 15px",
+                    background: securityNeedsAttention ? "#f97316" : colors.accent,
+                    color: "#fff",
+                    fontWeight: 900,
+                    cursor: "pointer",
+                  }}
+                >
+                  {securityNeedsAttention ? "Secure account" : "Change password"}
+                </button>
+
+                {callRepHref ? (
+                  <a
+                    href={callRepHref}
+                    style={{
+                      borderRadius: 14,
+                      padding: "12px 15px",
+                      border: `1px solid ${colors.border}`,
+                      color: colors.text,
+                      textDecoration: "none",
+                      fontWeight: 900,
+                      background: colors.card,
+                    }}
+                  >
+                    Call sales rep
+                  </a>
+                ) : null}
+              </div>
+            </div>
+
+            <div
+              style={{
+                display: "grid",
+                gap: 12,
+                gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
+              }}
+            >
+              <SummaryCard
+                title="Credit Room"
+                value={`KES ${formatMoney(summary.available_credit)}`}
+                subtitle="Available for route orders"
+                colors={colors}
+              />
+              <SummaryCard
+                title="This Month"
+                value={`KES ${formatMoney(insights.month_order_value)}`}
+                subtitle={`${insights.month_order_count || 0} order${Number(insights.month_order_count || 0) === 1 ? "" : "s"}`}
+                colors={colors}
+              />
+              <SummaryCard
+                title="Route Rank"
+                value={regionRankText}
+                subtitle="Within your region"
+                colors={colors}
+              />
+              <SummaryCard
+                title="Latest Order"
+                value={latestOrder ? `KES ${formatMoney(latestOrder.total_amount)}` : "-"}
+                subtitle={latestOrder ? formatRouteOrderState(latestOrder.order_status) : "No route order yet"}
+                colors={colors}
+              />
+            </div>
           </div>
+        </section>
+
+        {(passwordOpen || securityNeedsAttention || passwordMessage) ? (
+          <SectionCard title="Account security" colors={colors}>
+            <div style={{ display: "grid", gap: 14 }}>
+              <div style={{ color: colors.textMuted, lineHeight: 1.55 }}>
+                Use a private password for this route account. Keep it away from staff who should not see credit and order history.
+              </div>
+
+              {passwordMessage ? (
+                <div
+                  style={{
+                    borderRadius: 13,
+                    padding: 12,
+                    background: isDark ? "rgba(22,163,74,0.14)" : "#f0fdf4",
+                    border: `1px solid ${isDark ? "rgba(34,197,94,0.35)" : "#bbf7d0"}`,
+                    color: isDark ? "#86efac" : "#166534",
+                    fontWeight: 800,
+                  }}
+                >
+                  {passwordMessage}
+                </div>
+              ) : null}
+
+              {passwordError ? (
+                <div
+                  style={{
+                    borderRadius: 13,
+                    padding: 12,
+                    background: colors.dangerBg,
+                    border: `1px solid ${colors.dangerBorder}`,
+                    color: colors.dangerText,
+                    fontWeight: 800,
+                  }}
+                >
+                  {passwordError}
+                </div>
+              ) : null}
+
+              {(passwordOpen || securityNeedsAttention) ? (
+                <form onSubmit={handlePasswordSubmit} style={{ display: "grid", gap: 12 }}>
+                  <div
+                    style={{
+                      display: "grid",
+                      gap: 12,
+                      gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))",
+                    }}
+                  >
+                    <PasswordInput
+                      label="Current password"
+                      value={passwordForm.current_password}
+                      onChange={(event) => updatePasswordForm("current_password", event.target.value)}
+                      autoComplete="current-password"
+                      colors={colors}
+                    />
+                    <PasswordInput
+                      label="New password"
+                      value={passwordForm.new_password}
+                      onChange={(event) => updatePasswordForm("new_password", event.target.value)}
+                      autoComplete="new-password"
+                      colors={colors}
+                    />
+                    <PasswordInput
+                      label="Confirm new password"
+                      value={passwordForm.confirm_password}
+                      onChange={(event) => updatePasswordForm("confirm_password", event.target.value)}
+                      autoComplete="new-password"
+                      colors={colors}
+                    />
+                  </div>
+
+                  <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                    <button
+                      type="submit"
+                      disabled={passwordSaving}
+                      style={{
+                        border: "none",
+                        borderRadius: 14,
+                        padding: "12px 16px",
+                        background: passwordSaving ? "#94a3b8" : "#16a34a",
+                        color: "#fff",
+                        fontWeight: 900,
+                        cursor: passwordSaving ? "not-allowed" : "pointer",
+                      }}
+                    >
+                      {passwordSaving ? "Updating..." : "Update password"}
+                    </button>
+                    {!securityNeedsAttention ? (
+                      <button
+                        type="button"
+                        onClick={() => setPasswordOpen(false)}
+                        style={{
+                          borderRadius: 14,
+                          padding: "12px 16px",
+                          background: colors.buttonBg,
+                          color: colors.buttonText,
+                          border: `1px solid ${colors.border}`,
+                          fontWeight: 900,
+                          cursor: "pointer",
+                        }}
+                      >
+                        Close
+                      </button>
+                    ) : null}
+                  </div>
+                </form>
+              ) : null}
+            </div>
+          </SectionCard>
         ) : null}
 
         {notices.length > 0 ? (
@@ -428,6 +799,7 @@ export default function RouteCustomerDashboard() {
               display: "grid",
               gap: 12,
               gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
+              marginTop: 18,
               marginBottom: 18,
             }}
           >
@@ -441,7 +813,7 @@ export default function RouteCustomerDashboard() {
           style={{
             display: "grid",
             gap: 16,
-            gridTemplateColumns: "minmax(0, 1.4fr) minmax(280px, 0.8fr)",
+            gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
             marginBottom: 18,
           }}
         >
@@ -546,15 +918,15 @@ export default function RouteCustomerDashboard() {
             colors={colors}
           />
           <SummaryCard
-            title="Current Balance"
+            title="Credit Used"
             value={`KES ${formatMoney(summary.current_balance)}`}
-            subtitle="Outstanding balance"
+            subtitle="Route credit currently occupied"
             colors={colors}
           />
           <SummaryCard
-            title="Overdue Balance"
+            title="Needs Review"
             value={`KES ${formatMoney(summary.overdue_balance)}`}
-            subtitle="Overdue amount"
+            subtitle="Amount marked for account review"
             colors={colors}
           />
         </div>
@@ -580,14 +952,14 @@ export default function RouteCustomerDashboard() {
             colors={colors}
           />
           <SummaryCard
-            title="Total Paid Value"
+            title="Route Value Cleared"
             value={`KES ${formatMoney(summary.total_paid_value)}`}
-            subtitle="Payments recorded"
+            subtitle="Confirmed route value"
             colors={colors}
           />
           <SummaryCard
             title="Last Route Order"
-            value={summary.last_route_order_at ? formatDateTime(summary.last_route_order_at) : "—"}
+            value={summary.last_route_order_at ? formatDateTime(summary.last_route_order_at) : "-"}
             subtitle="Most recent order"
             colors={colors}
           />
@@ -623,17 +995,17 @@ export default function RouteCustomerDashboard() {
             <div style={{ display: "grid", gap: 10 }}>
               <div>
                 <div style={{ fontSize: 12, fontWeight: 800, color: colors.textMuted }}>Name</div>
-                <div style={{ color: colors.text }}>{customer?.name || "—"}</div>
+                <div style={{ color: colors.text }}>{customer?.name || "-"}</div>
               </div>
 
               <div>
                 <div style={{ fontSize: 12, fontWeight: 800, color: colors.textMuted }}>Phone</div>
-                <div style={{ color: colors.text }}>{customer?.phone || "—"}</div>
+                <div style={{ color: colors.text }}>{customer?.phone || "-"}</div>
               </div>
 
               <div>
                 <div style={{ fontSize: 12, fontWeight: 800, color: colors.textMuted }}>Email</div>
-                <div style={{ color: colors.text }}>{customer?.email || "—"}</div>
+                <div style={{ color: colors.text }}>{customer?.email || "-"}</div>
               </div>
 
               <div>
@@ -643,7 +1015,7 @@ export default function RouteCustomerDashboard() {
 
               <div>
                 <div style={{ fontSize: 12, fontWeight: 800, color: colors.textMuted }}>Portal Username</div>
-                <div style={{ color: colors.text }}>{account?.username || "—"}</div>
+                <div style={{ color: colors.text }}>{account?.username || "-"}</div>
               </div>
             </div>
           </div>
@@ -675,12 +1047,12 @@ export default function RouteCustomerDashboard() {
 
               <div>
                 <div style={{ fontSize: 12, fontWeight: 800, color: colors.textMuted }}>Rep Phone</div>
-                <div style={{ color: colors.text }}>{assignedRep?.phone_number || "—"}</div>
+                <div style={{ color: colors.text }}>{assignedRep?.phone_number || "-"}</div>
               </div>
 
               <div>
                 <div style={{ fontSize: 12, fontWeight: 800, color: colors.textMuted }}>Rep Email</div>
-                <div style={{ color: colors.text }}>{assignedRep?.email || "—"}</div>
+                <div style={{ color: colors.text }}>{assignedRep?.email || "-"}</div>
               </div>
 
               <div>
@@ -782,13 +1154,13 @@ export default function RouteCustomerDashboard() {
                       {order.order_number || `Order #${order.id}`}
                     </div>
                     <div style={{ color: colors.textMuted, fontSize: 13, marginTop: 4 }}>
-                      Status: {order.order_status || "—"} · Payment: {order.payment_status || order.payment_state || "—"}
+                      Route state: {formatRouteOrderState(order.order_status)}
                     </div>
                     <div style={{ color: colors.textMuted, fontSize: 13, marginTop: 4 }}>
-                      Total: KES {formatMoney(order.total_amount)} · Paid: KES {formatMoney(order.amount_paid)} · Balance: KES {formatMoney(order.balance_due)}
+                      Route value: KES {formatMoney(order.total_amount)}
                     </div>
                     <div style={{ color: colors.textMuted, fontSize: 13, marginTop: 4 }}>
-                      Sales Rep: {order.sales_rep_name || order.sales_rep_email || "—"}
+                      Sales Rep: {order.sales_rep_name || order.sales_rep_email || "-"}
                     </div>
                     <div style={{ color: colors.textMuted, fontSize: 13, marginTop: 4 }}>
                       Created: {formatDateTime(order.created_at)}
