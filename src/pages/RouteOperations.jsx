@@ -1,41 +1,62 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
 import { useTheme } from "../context/ThemeContext";
 import { getThemeColors } from "../utils/themeColors";
 import { listRegions } from "../api/regions";
-import { getRouteOperations } from "../api/routeOperations";
+import {
+  closeRouteCycle,
+  createRouteCycle,
+  getCurrentRouteCycle,
+  getRouteTerminal,
+  listRouteCycles,
+  syncRouteCycleOrders,
+} from "../api/routeOperations";
 
-const FILTERS = [
-  { value: "thismonth", label: "This month" },
-  { value: "30days", label: "30 days" },
-  { value: "7days", label: "7 days" },
-  { value: "today", label: "Today" },
+const ROUTE_TYPES = [
+  { value: "weekly_route", label: "Weekly route" },
+  { value: "mwatate_route", label: "Mwatate route" },
+  { value: "custom", label: "Custom route" },
 ];
 
-const statusLabels = {
-  pending: "Captured",
-  processing: "Shop queue",
-  dispatched: "Out for delivery",
-  completed: "Delivered",
+const SIGNALS = {
+  target_hit: ["Target hit", "#22c55e"],
+  on_pace: ["On pace", "#14b8a6"],
+  needs_push: ["Needs push", "#f59e0b"],
+  behind_pace: ["Behind pace", "#ef4444"],
+  watch: ["Watch", "#94a3b8"],
+};
+
+const STATUS_LABELS = {
+  planned: "Planned",
+  live: "Live",
+  closed: "Closed",
   cancelled: "Cancelled",
 };
 
-const toNumber = (value) => {
+const n = (value, fallback = 0) => {
   const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : 0;
+  return Number.isFinite(parsed) ? parsed : fallback;
 };
 
-const formatCurrency = (value) =>
+const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+
+const money = (value) =>
   new Intl.NumberFormat("en-KE", {
     style: "currency",
     currency: "KES",
     maximumFractionDigits: 0,
-  }).format(toNumber(value));
+  }).format(n(value));
 
-const formatNumber = (value) =>
-  new Intl.NumberFormat("en-KE", { maximumFractionDigits: 0 }).format(toNumber(value));
+const shortMoney = (value) => {
+  const amount = n(value);
+  const abs = Math.abs(amount);
+  if (abs >= 1000000) return `KSh ${(amount / 1000000).toFixed(2)}M`;
+  if (abs >= 1000) return `KSh ${(amount / 1000).toFixed(0)}K`;
+  return money(amount);
+};
 
-const formatDate = (value) => {
+const whole = (value) => new Intl.NumberFormat("en-KE", { maximumFractionDigits: 0 }).format(n(value));
+
+const dateText = (value) => {
   if (!value) return "-";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "-";
@@ -48,681 +69,505 @@ const formatDate = (value) => {
   });
 };
 
-const extractList = (payload) => {
-  if (Array.isArray(payload)) return payload;
-  if (Array.isArray(payload?.data)) return payload.data;
-  return [];
+const countdown = (deadline, nowMs) => {
+  const end = new Date(deadline || 0).getTime();
+  if (!end || Number.isNaN(end)) return "--:--:--";
+  const total = Math.max(Math.floor((end - nowMs) / 1000), 0);
+  const days = Math.floor(total / 86400);
+  const hours = Math.floor((total % 86400) / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  const seconds = total % 60;
+  const pad = (part) => String(part).padStart(2, "0");
+  return days ? `${days}d ${pad(hours)}:${pad(minutes)}:${pad(seconds)}` : `${pad(hours)}:${pad(minutes)}:${pad(seconds)}`;
 };
 
-function EmptyState({ label, muted }) {
+const datetimeLocal = (value) => {
+  const date = value ? new Date(value) : new Date();
+  const pad = (part) => String(part).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+};
+
+const defaultForm = () => {
+  const start = new Date();
+  const deadline = new Date(start);
+  deadline.setDate(deadline.getDate() + 3);
+  deadline.setHours(9, 0, 0, 0);
+  return {
+    name: `Route ${start.toLocaleDateString("en-KE", { month: "short", day: "numeric" })}`,
+    route_type: "weekly_route",
+    target_amount: "1200000",
+    status: "live",
+    region_id: "",
+    start_at: datetimeLocal(start),
+    deadline_at: datetimeLocal(deadline),
+  };
+};
+
+const rowsOf = (payload) => (Array.isArray(payload) ? payload : Array.isArray(payload?.data) ? payload.data : []);
+
+const errorText = (error, fallback) => {
+  const data = error?.response?.data;
+  return data?.error?.message || data?.message || data?.error || error?.message || fallback;
+};
+
+function Field({ label, children }) {
   return (
-    <div
-      style={{
-        padding: 24,
-        color: muted,
-        textAlign: "center",
-        border: `1px dashed ${muted}`,
-        borderRadius: 10,
-        opacity: 0.75,
-      }}
-    >
-      {label}
+    <label className="route-field">
+      <span>{label}</span>
+      {children}
+    </label>
+  );
+}
+
+function Pill({ children, color = "#94a3b8" }) {
+  return <span className="route-pill" style={{ color, borderColor: `${color}66`, background: `${color}18` }}>{children}</span>;
+}
+
+function Stat({ label, value, sub, color }) {
+  return (
+    <div className="route-stat">
+      <span>{label}</span>
+      <strong>{value}</strong>
+      {sub ? <small style={{ color }}>{sub}</small> : null}
     </div>
   );
 }
 
-function Section({ title, action, children, c }) {
+function CandleChart({ candles = [], target }) {
+  const data = candles
+    .map((item) => ({ ...item, open: n(item.open), high: n(item.high), low: n(item.low), close: n(item.close), volume: n(item.volume) }))
+    .filter((item) => item.time);
+
+  if (!data.length) return <div className="route-empty">Route candles will appear as orders are captured.</div>;
+
+  const width = 920;
+  const height = 320;
+  const left = 54;
+  const right = 24;
+  const top = 28;
+  const bottom = 58;
+  const innerW = width - left - right;
+  const innerH = height - top - bottom;
+  const max = Math.max(...data.map((item) => item.high), n(target), 1);
+  const min = Math.min(...data.map((item) => item.low), 0);
+  const spread = Math.max(max - min, 1);
+  const y = (value) => top + ((max - value) / spread) * innerH;
+  const step = innerW / Math.max(data.length, 1);
+  const bodyW = clamp(step * 0.48, 8, 24);
+  const maxVol = Math.max(...data.map((item) => item.volume), 1);
+  const targetY = n(target) > 0 ? y(n(target)) : null;
+
   return (
-    <section
-      style={{
-        background: c.card,
-        border: `1px solid ${c.border}`,
-        borderRadius: 12,
-        overflow: "hidden",
-      }}
-    >
-      <div
-        style={{
-          padding: "18px 20px",
-          borderBottom: `1px solid ${c.borderLight}`,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: 12,
-        }}
-      >
-        <h2 style={{ margin: 0, fontSize: 17, color: c.text }}>{title}</h2>
+    <div className="route-chart-scroll">
+      <svg viewBox={`0 0 ${width} ${height}`} className="route-chart" role="img" aria-label="Route target candle chart">
+        <rect width={width} height={height} rx="20" fill="#020617" />
+        {[0, 0.25, 0.5, 0.75, 1].map((tick) => {
+          const lineY = top + tick * innerH;
+          const value = max - tick * spread;
+          return (
+            <g key={tick}>
+              <line x1={left} y1={lineY} x2={width - right} y2={lineY} stroke="rgba(148,163,184,.14)" />
+              <text x="10" y={lineY + 4} fill="#64748b" fontSize="11" fontWeight="800">{shortMoney(value).replace("KSh ", "")}</text>
+            </g>
+          );
+        })}
+        {targetY ? (
+          <g>
+            <line x1={left} y1={targetY} x2={width - right} y2={targetY} stroke="#f97316" strokeWidth="2" strokeDasharray="7 7" />
+            <text x={width - 98} y={Math.max(targetY - 8, 16)} fill="#fed7aa" fontSize="12" fontWeight="900">Target</text>
+          </g>
+        ) : null}
+        {data.map((item, index) => {
+          const x = left + index * step + step / 2;
+          const up = item.close >= item.open;
+          const color = up ? "#22c55e" : "#ef4444";
+          const openY = y(item.open);
+          const closeY = y(item.close);
+          const bodyY = Math.min(openY, closeY);
+          const bodyH = Math.max(Math.abs(openY - closeY), 5);
+          const volH = (item.volume / maxVol) * 32;
+          return (
+            <g key={`${item.time}-${index}`}>
+              <rect x={x - bodyW / 2} y={height - bottom + 34 - volH} width={bodyW} height={volH} rx="3" fill={`${color}33`} />
+              <line x1={x} y1={y(item.high)} x2={x} y2={y(item.low)} stroke={color} strokeWidth="2" strokeLinecap="round" />
+              <rect x={x - bodyW / 2} y={bodyY} width={bodyW} height={bodyH} rx="4" fill={color} />
+            </g>
+          );
+        })}
+      </svg>
+    </div>
+  );
+}
+function Board({ title, action, children }) {
+  return (
+    <section className="route-board">
+      <div className="route-board-head">
+        <h3>{title}</h3>
         {action}
       </div>
-      <div style={{ padding: 20 }}>{children}</div>
+      {children}
     </section>
   );
 }
 
-function Table({ columns, rows, renderRow, empty, c }) {
-  if (!rows.length) return <EmptyState label={empty} muted={c.textMuted} />;
+function RankList({ rows = [], nameKey = "name", valueKey = "route_value", subKey, empty = "No records yet." }) {
+  const max = Math.max(...rows.map((row) => n(row[valueKey])), 0);
+  if (!rows.length) return <div className="route-list-empty">{empty}</div>;
 
   return (
-    <div style={{ overflowX: "auto" }}>
-      <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 760 }}>
-        <thead>
-          <tr>
-            {columns.map((column) => (
-              <th
-                key={column}
-                style={{
-                  textAlign: "left",
-                  color: c.textMuted,
-                  fontSize: 12,
-                  fontWeight: 700,
-                  textTransform: "uppercase",
-                  letterSpacing: 0.4,
-                  padding: "0 12px 12px",
-                  borderBottom: `1px solid ${c.borderLight}`,
-                  whiteSpace: "nowrap",
-                }}
-              >
-                {column}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>{rows.map(renderRow)}</tbody>
-      </table>
+    <div className="route-rank-list">
+      {rows.map((row, index) => {
+        const value = n(row[valueKey]);
+        const pct = max > 0 ? (value / max) * 100 : 0;
+        return (
+          <div className="route-rank" key={`${row[nameKey] || index}-${index}`}>
+            <div className="route-rank-top">
+              <strong>{index + 1}. {row[nameKey] || "Unassigned"}</strong>
+              <span>{shortMoney(value)}</span>
+            </div>
+            {subKey && row[subKey] ? <small>{row[subKey]}</small> : null}
+            <div className="route-rank-bar"><i style={{ width: `${pct}%` }} /></div>
+          </div>
+        );
+      })}
     </div>
   );
 }
 
-function Cell({ children, muted = false, align = "left", c }) {
+function OrderTape({ orders = [] }) {
+  if (!orders.length) return <div className="route-list-empty">No route orders captured in this cycle yet.</div>;
+
   return (
-    <td
-      style={{
-        padding: "14px 12px",
-        borderBottom: `1px solid ${c.borderLight}`,
-        color: muted ? c.textMuted : c.text,
-        fontSize: 14,
-        textAlign: align,
-        verticalAlign: "top",
-      }}
-    >
-      {children}
-    </td>
+    <div className="route-tape">
+      {orders.map((order) => (
+        <div className="route-tape-row" key={order.id}>
+          <div>
+            <strong>{order.customer_name || "Route customer"}</strong>
+            <small>{order.order_number || `Order #${order.id}`} - {order.sales_rep_name || "No rep"} - {order.location_name || "No location"}</small>
+          </div>
+          <div>
+            <b>{shortMoney(order.total_amount)}</b>
+            <small>{dateText(order.created_at)}</small>
+          </div>
+        </div>
+      ))}
+    </div>
   );
 }
 
-function RegionBar({ region, maxValue, c }) {
-  const value = toNumber(region.route_value);
-  const width = maxValue > 0 ? Math.max(6, Math.round((value / maxValue) * 100)) : 0;
+function EventFeed({ events = [] }) {
+  if (!events.length) return <div className="route-list-empty">Route events will show here.</div>;
 
   return (
-    <div>
-      <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
-        <strong style={{ color: c.text }}>{region.name}</strong>
-        <span style={{ color: c.textMuted }}>{formatCurrency(value)}</span>
-      </div>
-      <div
-        style={{
-          height: 8,
-          background: c.buttonBg,
-          borderRadius: 999,
-          overflow: "hidden",
-          marginTop: 8,
-        }}
-      >
-        <div
-          style={{
-            width: `${width}%`,
-            height: "100%",
-            background: "linear-gradient(90deg, #ff4f1f, #f59e0b, #10b981)",
-          }}
-        />
-      </div>
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          color: c.textMuted,
-          fontSize: 12,
-          marginTop: 6,
-        }}
-      >
-        <span>{formatNumber(region.order_count)} orders</span>
-        <span>{formatNumber(region.buying_route_customers)} buying customers</span>
-      </div>
+    <div className="route-events">
+      {events.map((event) => {
+        const color = event.severity === "success" ? "#22c55e" : event.severity === "warning" ? "#f59e0b" : "#38bdf8";
+        return (
+          <div className="route-event" key={event.id} style={{ borderColor: color }}>
+            <strong>{event.title || event.event_type}</strong>
+            <small>{dateText(event.created_at)} {event.event_amount ? `- ${shortMoney(event.event_amount)}` : ""}</small>
+          </div>
+        );
+      })}
     </div>
   );
 }
 
 export default function RouteOperations() {
-  const navigate = useNavigate();
   const { isDark } = useTheme();
   const c = getThemeColors(isDark);
-
-  const [filter, setFilter] = useState("thismonth");
-  const [regionId, setRegionId] = useState("");
+  const [nowMs, setNowMs] = useState(Date.now());
+  const [cycles, setCycles] = useState([]);
   const [regions, setRegions] = useState([]);
-  const [data, setData] = useState(null);
+  const [cycleId, setCycleId] = useState("");
+  const [intervalMinutes, setIntervalMinutes] = useState(30);
+  const [terminal, setTerminal] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [showCreate, setShowCreate] = useState(false);
+  const [form, setForm] = useState(defaultForm);
+  const [message, setMessage] = useState("");
   const [error, setError] = useState("");
-  const [lastUpdated, setLastUpdated] = useState(null);
 
-  const loadData = useCallback(async (silent = false) => {
+  const cycle = terminal?.cycle || null;
+  const summary = terminal?.summary || {};
+  const [signalLabel, signalColor] = SIGNALS[summary.signal] || SIGNALS.watch;
+  const achievedPct = clamp(n(summary.achieved_percent), 0, 100);
+  const elapsedPct = clamp(n(summary.elapsed_percent), 0, 100);
+
+  const loadCycles = useCallback(async () => {
+    const data = await listRouteCycles({ limit: 50 });
+    setCycles(rowsOf(data));
+  }, []);
+
+  const loadRegions = useCallback(async () => {
     try {
-      if (!silent) setLoading(true);
-      setError("");
-
-      const [regionsPayload, routePayload] = await Promise.all([
-        listRegions(),
-        getRouteOperations({
-          filter,
-          region_id: regionId || undefined,
-          limit: 10,
-        }),
-      ]);
-
-      setRegions(extractList(regionsPayload));
-      setData(routePayload || {});
-      setLastUpdated(new Date());
+      const data = await listRegions();
+      setRegions(rowsOf(data));
     } catch (err) {
-      console.error("Route operations load error:", err);
-      setError(err?.response?.data?.error || err?.message || "Failed to load route operations");
-    } finally {
-      if (!silent) setLoading(false);
+      console.warn("Regions failed to load", err);
     }
-  }, [filter, regionId]);
+  }, []);
+
+  const loadTerminal = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const data = cycleId
+        ? await getRouteTerminal(cycleId, { interval_minutes: intervalMinutes, limit: 18 })
+        : await getCurrentRouteCycle({ interval_minutes: intervalMinutes, limit: 18 });
+      setTerminal(data || null);
+      if (data?.cycle?.id && !cycleId) setCycleId(String(data.cycle.id));
+    } catch (err) {
+      setError(errorText(err, "Failed to load route terminal"));
+    } finally {
+      setLoading(false);
+    }
+  }, [cycleId, intervalMinutes]);
 
   useEffect(() => {
-    loadData();
-  }, [loadData]);
+    loadCycles().catch((err) => setError(errorText(err, "Failed to load route cycles")));
+    loadRegions();
+  }, [loadCycles, loadRegions]);
 
   useEffect(() => {
-    const timer = setInterval(() => loadData(true), 60000);
-    return () => clearInterval(timer);
-  }, [loadData]);
+    loadTerminal();
+  }, [loadTerminal]);
 
-  const summary = data?.summary || {};
-  const regionLeaderboard = Array.isArray(data?.region_leaderboard) ? data.region_leaderboard : [];
-  const topCustomers = Array.isArray(data?.top_route_customers) ? data.top_route_customers : [];
-  const topSalesReps = Array.isArray(data?.top_sales_reps) ? data.top_sales_reps : [];
-  const topProducts = Array.isArray(data?.top_products) ? data.top_products : [];
-  const recentOrders = Array.isArray(data?.recent_route_orders) ? data.recent_route_orders : [];
-  const statusSummary = Array.isArray(data?.status_summary) ? data.status_summary : [];
-  const dayPattern = Array.isArray(data?.day_pattern) ? data.day_pattern : [];
+  useEffect(() => {
+    const clock = window.setInterval(() => setNowMs(Date.now()), 1000);
+    return () => window.clearInterval(clock);
+  }, []);
 
-  const maxRegionValue = useMemo(
-    () => Math.max(...regionLeaderboard.map((region) => toNumber(region.route_value)), 0),
-    [regionLeaderboard]
-  );
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      loadTerminal();
+      loadCycles().catch(() => undefined);
+    }, 20000);
+    return () => window.clearInterval(timer);
+  }, [loadCycles, loadTerminal]);
 
-  const summaryCards = [
-    {
-      label: "Route value",
-      value: formatCurrency(summary.route_value),
-      detail: "Delivery collection and approved credit route sales",
-      color: "#ff4f1f",
-    },
-    {
-      label: "Route orders",
-      value: formatNumber(summary.route_orders),
-      detail: `${formatNumber(summary.shop_work_queue)} in shop queue`,
-      color: "#2563eb",
-    },
-    {
-      label: "Route customers",
-      value: formatNumber(summary.total_route_customers),
-      detail: `${formatNumber(summary.buying_route_customers)} ordered in this period`,
-      color: "#0f766e",
-    },
-    {
-      label: "Active reps",
-      value: formatNumber(summary.active_sales_reps),
-      detail: "Reps with captured route orders",
-      color: "#7c3aed",
-    },
-    {
-      label: "Delivery queue",
-      value: formatNumber(summary.delivery_queue),
-      detail: "Orders already dispatched",
-      color: "#f59e0b",
-    },
-    {
-      label: "Average order",
-      value: formatCurrency(summary.average_order_value),
-      detail: "Average route basket value",
-      color: "#16a34a",
-    },
-  ];
+  const stats = useMemo(() => [
+    ["Route value", shortMoney(summary.achieved_amount), `${whole(achievedPct)}% of ${shortMoney(summary.target_amount)}`, "#22c55e"],
+    ["Remaining", shortMoney(summary.remaining_amount), `${countdown(cycle?.deadline_at, nowMs)} left`, "#f97316"],
+    ["Pace per hour", shortMoney(summary.current_pace_per_hour), `Needs ${shortMoney(summary.required_pace_per_hour)}/hr`, signalColor],
+    ["Orders", whole(summary.order_count), `${whole(summary.customer_count)} customers, ${whole(summary.sales_rep_count)} reps`, "#38bdf8"],
+    ["Largest order", shortMoney(summary.largest_order_amount), `Avg ${shortMoney(summary.average_order_value)}`, "#a78bfa"],
+    ["Projected close", shortMoney(summary.projected_close_amount), `${whole(summary.confidence_percent)}% confidence`, signalColor],
+  ], [achievedPct, cycle?.deadline_at, nowMs, signalColor, summary]);
 
+  const createCycle = async (event) => {
+    event.preventDefault();
+    setSaving(true);
+    setError("");
+    setMessage("");
+    try {
+      const payload = {
+        ...form,
+        target_amount: n(form.target_amount),
+        region_id: form.region_id || null,
+        start_at: new Date(form.start_at).toISOString(),
+        deadline_at: new Date(form.deadline_at).toISOString(),
+      };
+      const created = await createRouteCycle(payload);
+      const nextTerminal = created?.terminal || created;
+      setTerminal(nextTerminal || null);
+      if (nextTerminal?.cycle?.id) setCycleId(String(nextTerminal.cycle.id));
+      setMessage(`Route opened. ${whole(created?.synced_orders || 0)} existing orders synced.`);
+      setForm(defaultForm());
+      setShowCreate(false);
+      await loadCycles();
+    } catch (err) {
+      setError(errorText(err, "Failed to create route cycle"));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const syncOrders = async () => {
+    if (!cycle?.id) return;
+    setSaving(true);
+    setError("");
+    setMessage("");
+    try {
+      const data = await syncRouteCycleOrders(cycle.id);
+      setTerminal(data?.terminal || terminal);
+      setMessage(`${whole(data?.synced_orders || 0)} route orders synced.`);
+      await loadCycles();
+    } catch (err) {
+      setError(errorText(err, "Failed to sync route orders"));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const closeCycle = async () => {
+    if (!cycle?.id || !window.confirm("Close this route cycle and lock the final amount?")) return;
+    setSaving(true);
+    setError("");
+    setMessage("");
+    try {
+      const data = await closeRouteCycle(cycle.id);
+      setTerminal(data || terminal);
+      setMessage("Route cycle closed with final value saved.");
+      await loadCycles();
+    } catch (err) {
+      setError(errorText(err, "Failed to close route cycle"));
+    } finally {
+      setSaving(false);
+    }
+  };
   return (
-    <div style={{ minHeight: "100vh", background: c.bg, color: c.text, padding: 24 }}>
-      <div
-        style={{
-          display: "flex",
-          alignItems: "flex-start",
-          justifyContent: "space-between",
-          gap: 16,
-          flexWrap: "wrap",
-          marginBottom: 24,
-        }}
-      >
-        <div>
-          <div
-            style={{
-              color: "#ff4f1f",
-              fontSize: 12,
-              fontWeight: 800,
-              letterSpacing: 1,
-              textTransform: "uppercase",
-              marginBottom: 8,
-            }}
-          >
-            Route Command
+    <div className="route-page" style={{ background: c.bg, color: c.text }}>
+      <div className="route-terminal">
+        <header className="route-hero">
+          <div>
+            <div className="route-pills">
+              <Pill color="#fb923c">Route operations terminal</Pill>
+              {cycle ? <Pill color={cycle.status === "live" ? "#22c55e" : cycle.status === "closed" ? "#94a3b8" : "#f59e0b"}>{STATUS_LABELS[cycle.status] || cycle.status}</Pill> : null}
+              {cycle?.region_name ? <Pill color="#38bdf8">{cycle.region_name}</Pill> : null}
+            </div>
+            <h1>Route trading desk</h1>
+            <p>Live route target, order spikes, best reps, strongest customers, and fast-moving products from one command screen.</p>
           </div>
-          <h1 style={{ margin: 0, fontSize: 30 }}>Route Operations</h1>
-          <p style={{ color: c.textMuted, margin: "8px 0 0", maxWidth: 760 }}>
-            Region performance, route customer buying power, sales rep output, product movement,
-            and delivery queues in one live view.
-          </p>
-        </div>
+          <div className="route-controls">
+            <select value={cycleId} onChange={(event) => setCycleId(event.target.value)}>
+              <option value="">Current live cycle</option>
+              {cycles.map((item) => <option key={item.id} value={item.id}>{item.name} - {STATUS_LABELS[item.status] || item.status}</option>)}
+            </select>
+            <select value={intervalMinutes} onChange={(event) => setIntervalMinutes(Number(event.target.value))}>
+              {[15, 30, 60, 120].map((minutes) => <option key={minutes} value={minutes}>{minutes}m</option>)}
+            </select>
+            <button type="button" className="route-btn muted" onClick={loadTerminal} disabled={loading || saving}>Refresh</button>
+            <button type="button" className="route-btn hot" onClick={() => setShowCreate((value) => !value)}>New route</button>
+          </div>
+        </header>
 
-        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
-          <select
-            value={filter}
-            onChange={(event) => setFilter(event.target.value)}
-            style={{
-              background: c.inputBg,
-              color: c.text,
-              border: `1px solid ${c.border}`,
-              borderRadius: 8,
-              padding: "10px 12px",
-              minWidth: 130,
-            }}
-          >
-            {FILTERS.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
+        {showCreate ? (
+          <form className="route-create" onSubmit={createCycle}>
+            <Field label="Route name"><input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} required /></Field>
+            <Field label="Route type"><select value={form.route_type} onChange={(event) => setForm({ ...form, route_type: event.target.value })}>{ROUTE_TYPES.map((type) => <option key={type.value} value={type.value}>{type.label}</option>)}</select></Field>
+            <Field label="Target"><input type="number" min="0" value={form.target_amount} onChange={(event) => setForm({ ...form, target_amount: event.target.value })} /></Field>
+            <Field label="Region"><select value={form.region_id} onChange={(event) => setForm({ ...form, region_id: event.target.value })}><option value="">All route regions</option>{regions.map((region) => <option key={region.id} value={region.id}>{region.name}</option>)}</select></Field>
+            <Field label="Start"><input type="datetime-local" value={form.start_at} onChange={(event) => setForm({ ...form, start_at: event.target.value })} required /></Field>
+            <Field label="Deadline"><input type="datetime-local" value={form.deadline_at} onChange={(event) => setForm({ ...form, deadline_at: event.target.value })} required /></Field>
+            <Field label="Status"><select value={form.status} onChange={(event) => setForm({ ...form, status: event.target.value })}><option value="live">Live</option><option value="planned">Planned</option></select></Field>
+            <div className="route-form-actions">
+              <button type="button" className="route-btn muted" onClick={() => setShowCreate(false)}>Cancel</button>
+              <button type="submit" className="route-btn hot" disabled={saving}>{saving ? "Opening..." : "Open route"}</button>
+            </div>
+          </form>
+        ) : null}
 
-          <select
-            value={regionId}
-            onChange={(event) => setRegionId(event.target.value)}
-            style={{
-              background: c.inputBg,
-              color: c.text,
-              border: `1px solid ${c.border}`,
-              borderRadius: 8,
-              padding: "10px 12px",
-              minWidth: 170,
-            }}
-          >
-            <option value="">All regions</option>
-            {regions.map((region) => (
-              <option key={region.id} value={region.id}>
-                {region.name}
-              </option>
-            ))}
-          </select>
+        {(message || error) ? <div className={error ? "route-alert bad" : "route-alert good"}>{error || message}</div> : null}
 
-          <button
-            type="button"
-            onClick={() => loadData()}
-            style={{
-              border: "none",
-              borderRadius: 8,
-              padding: "11px 16px",
-              fontWeight: 700,
-              background: "#ff4f1f",
-              color: "#fff",
-              cursor: "pointer",
-            }}
-          >
-            Refresh
-          </button>
-        </div>
+        {!cycle && !loading ? (
+          <section className="route-no-cycle">
+            <h2>No live route cycle found</h2>
+            <p>Open a weekly route, Mwatate route, or custom route cycle. Existing route orders inside the selected time window can be synced immediately.</p>
+            <button type="button" className="route-btn hot" onClick={() => setShowCreate(true)}>Create route cycle</button>
+          </section>
+        ) : (
+          <main className="route-body">
+            <div className="route-live-head">
+              <div>
+                <div className="route-pills"><Pill color={signalColor}>{signalLabel}</Pill><Pill>Started {dateText(cycle?.start_at)}</Pill><Pill>Deadline {dateText(cycle?.deadline_at)}</Pill></div>
+                <h2>{cycle?.name || "Route cycle"}</h2>
+              </div>
+              <div className="route-actions">
+                <button type="button" className="route-btn muted" onClick={syncOrders} disabled={!cycle?.id || saving}>Sync orders</button>
+                {cycle?.status !== "closed" ? <button type="button" className="route-btn danger" onClick={closeCycle} disabled={!cycle?.id || saving}>Close route</button> : null}
+              </div>
+            </div>
+
+            <section className="route-progress">
+              <div><strong>Target progress</strong><span>{money(summary.achieved_amount)} / {money(summary.target_amount)}</span></div>
+              <div className="route-progress-bar"><i style={{ width: `${achievedPct}%`, background: `linear-gradient(90deg, ${signalColor}, #facc15)` }} /></div>
+              <div><small>{whole(elapsedPct)}% time elapsed</small><small>{whole(summary.hours_remaining)} hours remaining</small></div>
+            </section>
+
+            <section className="route-stats">
+              {stats.map(([label, value, sub, color]) => <Stat key={label} label={label} value={value} sub={sub} color={color} />)}
+            </section>
+
+            <section className="route-grid-main">
+              <Board title="Route value candles" action={<Pill color="#38bdf8">{intervalMinutes} min blocks</Pill>}>
+                <CandleChart candles={terminal?.candles || []} target={terminal?.target_line || summary.target_amount} />
+              </Board>
+              <Board title="Live order tape"><OrderTape orders={terminal?.live_order_tape || []} /></Board>
+            </section>
+
+            <section className="route-grid-four">
+              <Board title="Best selling products"><RankList rows={terminal?.top_products || []} empty="No products sold in this route yet." /></Board>
+              <Board title="Best sales reps"><RankList rows={terminal?.top_sales_reps || []} empty="Sales rep rankings will appear after route orders land." /></Board>
+              <Board title="Highest value route customers"><RankList rows={terminal?.top_route_customers || []} subKey="location_name" empty="Route customer rankings will appear here." /></Board>
+              <Board title="Location performance"><RankList rows={terminal?.location_leaderboard || []} empty="Locations will rank once orders are attached." /></Board>
+            </section>
+
+            <Board title="Route event stream"><EventFeed events={terminal?.events || []} /></Board>
+          </main>
+        )}
       </div>
 
-      {lastUpdated && (
-        <div style={{ color: c.textMuted, fontSize: 12, marginBottom: 16 }}>
-          Live refresh every 60 seconds. Last update {formatDate(lastUpdated)}.
-        </div>
-      )}
-
-      {error && (
-        <div
-          style={{
-            padding: 14,
-            borderRadius: 10,
-            background: isDark ? "rgba(239, 68, 68, 0.14)" : "#fff1f2",
-            border: "1px solid rgba(239, 68, 68, 0.35)",
-            color: isDark ? "#fecaca" : "#991b1b",
-            marginBottom: 20,
-          }}
-        >
-          {error}
-        </div>
-      )}
-
-      {loading ? (
-        <div style={{ padding: 40, background: c.card, borderRadius: 12, border: `1px solid ${c.border}` }}>
-          Loading route operations...
-        </div>
-      ) : (
-        <>
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))",
-              gap: 14,
-              marginBottom: 20,
-            }}
-          >
-            {summaryCards.map((card) => (
-              <div
-                key={card.label}
-                style={{
-                  background: c.card,
-                  border: `1px solid ${c.border}`,
-                  borderRadius: 12,
-                  padding: 18,
-                  boxShadow: isDark ? "none" : "0 12px 28px rgba(15, 23, 42, 0.05)",
-                }}
-              >
-                <div
-                  style={{
-                    width: 34,
-                    height: 4,
-                    background: card.color,
-                    borderRadius: 999,
-                    marginBottom: 14,
-                  }}
-                />
-                <div style={{ color: c.textMuted, fontSize: 12, fontWeight: 800, textTransform: "uppercase" }}>
-                  {card.label}
-                </div>
-                <div style={{ fontSize: 27, fontWeight: 800, marginTop: 8 }}>{card.value}</div>
-                <div style={{ color: c.textMuted, marginTop: 8, fontSize: 13 }}>{card.detail}</div>
-              </div>
-            ))}
-          </div>
-
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
-              gap: 14,
-              marginBottom: 20,
-            }}
-          >
-            {[
-              ["Main region capture", "Mon-Tue", "Sales reps collect route orders in the assigned region."],
-              ["Shop close", "Wed", "Orders are finalized, packed, and prepared for dispatch."],
-              ["Main route delivery", "Thu-Sat", "Delivery team completes drops and collection on delivery."],
-              ["MWATATE route", "Thu-Fri capture, Sat delivery", "Weekly MWATATE run stays visible as its own rhythm."],
-            ].map(([title, cadence, detail]) => (
-              <div
-                key={title}
-                style={{
-                  background: isDark ? "#111827" : "#111827",
-                  color: "#fff",
-                  borderRadius: 12,
-                  padding: 18,
-                  border: "1px solid rgba(255,255,255,0.08)",
-                }}
-              >
-                <div style={{ color: "#f97316", fontSize: 12, fontWeight: 800, textTransform: "uppercase" }}>
-                  {cadence}
-                </div>
-                <div style={{ fontSize: 18, fontWeight: 800, marginTop: 8 }}>{title}</div>
-                <div style={{ color: "#cbd5e1", marginTop: 8, lineHeight: 1.5 }}>{detail}</div>
-              </div>
-            ))}
-          </div>
-
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
-              gap: 20,
-              marginBottom: 20,
-            }}
-          >
-            <Section title="Region Leaderboard" c={c}>
-              {regionLeaderboard.length ? (
-                <div style={{ display: "grid", gap: 18 }}>
-                  {regionLeaderboard.slice(0, 8).map((region) => (
-                    <RegionBar key={region.id || region.name} region={region} maxValue={maxRegionValue} c={c} />
-                  ))}
-                </div>
-              ) : (
-                <EmptyState label="No route sales for this period." muted={c.textMuted} />
-              )}
-            </Section>
-
-            <Section title="Regional Breakdown" c={c}>
-              <Table
-                c={c}
-                columns={["Region", "Value", "Orders", "Customers", "Shop queue", "Delivery", "Last order"]}
-                rows={regionLeaderboard}
-                empty="No regional route data yet."
-                renderRow={(region) => (
-                  <tr key={region.id || region.name}>
-                    <Cell c={c}>
-                      <button
-                        type="button"
-                        onClick={() => navigate(`/regions/${region.id}`)}
-                        style={{
-                          border: "none",
-                          background: "transparent",
-                          padding: 0,
-                          color: "#2563eb",
-                          fontWeight: 800,
-                          cursor: "pointer",
-                        }}
-                      >
-                        {region.name}
-                      </button>
-                    </Cell>
-                    <Cell c={c}>{formatCurrency(region.route_value)}</Cell>
-                    <Cell c={c}>{formatNumber(region.order_count)}</Cell>
-                    <Cell c={c}>
-                      {formatNumber(region.buying_route_customers)} / {formatNumber(region.total_route_customers)}
-                    </Cell>
-                    <Cell c={c}>{formatNumber(region.shop_work_queue)}</Cell>
-                    <Cell c={c}>{formatNumber(region.delivery_queue)}</Cell>
-                    <Cell c={c} muted>{formatDate(region.last_order_at)}</Cell>
-                  </tr>
-                )}
-              />
-            </Section>
-          </div>
-
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(360px, 1fr))",
-              gap: 20,
-              marginBottom: 20,
-            }}
-          >
-            <Section title="Highest Purchasing Route Customers" c={c}>
-              <Table
-                c={c}
-                columns={["Customer", "Region", "Orders", "Value", "Last order"]}
-                rows={topCustomers}
-                empty="No buying route customers in this period."
-                renderRow={(customer) => (
-                  <tr key={`${customer.id || customer.phone}-${customer.name}`}>
-                    <Cell c={c}>
-                      <strong>{customer.name || "Route customer"}</strong>
-                      <div style={{ color: c.textMuted, fontSize: 12 }}>{customer.phone || "-"}</div>
-                    </Cell>
-                    <Cell c={c}>
-                      {customer.region_name || "-"}
-                      <div style={{ color: c.textMuted, fontSize: 12 }}>{customer.location_name || ""}</div>
-                    </Cell>
-                    <Cell c={c}>{formatNumber(customer.order_count)}</Cell>
-                    <Cell c={c}>{formatCurrency(customer.total_spent)}</Cell>
-                    <Cell c={c} muted>{formatDate(customer.last_order_at)}</Cell>
-                  </tr>
-                )}
-              />
-            </Section>
-
-            <Section title="Best Selling Sales Reps" c={c}>
-              <Table
-                c={c}
-                columns={["Rep", "Orders", "Customers", "Route value", "Last order"]}
-                rows={topSalesReps}
-                empty="No sales rep route orders in this period."
-                renderRow={(rep) => (
-                  <tr key={rep.id || rep.name}>
-                    <Cell c={c}>
-                      <strong>{rep.name || "Unassigned"}</strong>
-                      <div style={{ color: c.textMuted, fontSize: 12 }}>{rep.phone || "-"}</div>
-                    </Cell>
-                    <Cell c={c}>{formatNumber(rep.order_count)}</Cell>
-                    <Cell c={c}>{formatNumber(rep.customer_count)}</Cell>
-                    <Cell c={c}>{formatCurrency(rep.route_value)}</Cell>
-                    <Cell c={c} muted>{formatDate(rep.last_order_at)}</Cell>
-                  </tr>
-                )}
-              />
-            </Section>
-          </div>
-
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(360px, 1fr))",
-              gap: 20,
-              marginBottom: 20,
-            }}
-          >
-            <Section title="Best Selling Products On Route" c={c}>
-              <Table
-                c={c}
-                columns={["Product", "Units", "Orders", "Value", "Stock"]}
-                rows={topProducts}
-                empty="No product movement for route orders yet."
-                renderRow={(product) => (
-                  <tr key={product.id || product.name}>
-                    <Cell c={c}>
-                      <strong>{product.name || "Product"}</strong>
-                      <div style={{ color: c.textMuted, fontSize: 12 }}>{product.sku || "-"}</div>
-                    </Cell>
-                    <Cell c={c}>{formatNumber(product.units_ordered)}</Cell>
-                    <Cell c={c}>{formatNumber(product.order_count)}</Cell>
-                    <Cell c={c}>{formatCurrency(product.route_value)}</Cell>
-                    <Cell c={c}>{formatNumber(product.current_stock)}</Cell>
-                  </tr>
-                )}
-              />
-            </Section>
-
-            <Section title="Order Stage Mix" c={c}>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 12 }}>
-                {statusSummary.length ? (
-                  statusSummary.map((stage) => (
-                    <div
-                      key={stage.status}
-                      style={{
-                        border: `1px solid ${c.borderLight}`,
-                        borderRadius: 10,
-                        padding: 14,
-                        background: c.rowBg2,
-                      }}
-                    >
-                      <div style={{ color: c.textMuted, fontSize: 12, textTransform: "uppercase", fontWeight: 800 }}>
-                        {statusLabels[stage.status] || stage.status}
-                      </div>
-                      <div style={{ fontSize: 24, fontWeight: 800, marginTop: 8 }}>
-                        {formatNumber(stage.order_count)}
-                      </div>
-                      <div style={{ color: c.textMuted, fontSize: 12, marginTop: 4 }}>
-                        {formatCurrency(stage.route_value)}
-                      </div>
-                    </div>
-                  ))
-                ) : (
-                  <EmptyState label="No route stage activity yet." muted={c.textMuted} />
-                )}
-              </div>
-
-              <div style={{ marginTop: 18 }}>
-                <h3 style={{ fontSize: 14, margin: "0 0 10px", color: c.textMuted }}>Capture by day</h3>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(86px, 1fr))", gap: 8 }}>
-                  {dayPattern.map((day) => (
-                    <div
-                      key={day.day_number}
-                      style={{
-                        padding: 10,
-                        borderRadius: 10,
-                        background: c.rowBg2,
-                        border: `1px solid ${c.borderLight}`,
-                      }}
-                    >
-                      <strong style={{ display: "block" }}>{String(day.day_name || "").trim()}</strong>
-                      <span style={{ color: c.textMuted, fontSize: 12 }}>
-                        {formatNumber(day.order_count)} orders
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </Section>
-          </div>
-
-          <Section
-            title="Recent Route Orders"
-            c={c}
-            action={
-              <button
-                type="button"
-                onClick={() => navigate("/orders")}
-                style={{
-                  border: `1px solid ${c.border}`,
-                  background: c.inputBg,
-                  color: c.text,
-                  borderRadius: 8,
-                  padding: "8px 12px",
-                  cursor: "pointer",
-                  fontWeight: 700,
-                }}
-              >
-                Open orders
-              </button>
-            }
-          >
-            <Table
-              c={c}
-              columns={["Order", "Customer", "Region", "Rep", "Stage", "Value", "Captured"]}
-              rows={recentOrders}
-              empty="No route orders captured in this period."
-              renderRow={(order) => (
-                <tr key={order.id} style={{ cursor: "pointer" }} onClick={() => navigate(`/orders/${order.id}`)}>
-                  <Cell c={c}>
-                    <strong style={{ color: "#2563eb" }}>{order.order_number}</strong>
-                  </Cell>
-                  <Cell c={c}>
-                    {order.customer_name || "Route customer"}
-                    <div style={{ color: c.textMuted, fontSize: 12 }}>{order.customer_phone || "-"}</div>
-                  </Cell>
-                  <Cell c={c}>
-                    {order.region_name || "-"}
-                    <div style={{ color: c.textMuted, fontSize: 12 }}>{order.location_name || ""}</div>
-                  </Cell>
-                  <Cell c={c}>{order.sales_rep_name || "Unassigned"}</Cell>
-                  <Cell c={c}>{statusLabels[order.order_status] || order.order_status || "Captured"}</Cell>
-                  <Cell c={c}>{formatCurrency(order.total_amount)}</Cell>
-                  <Cell c={c} muted>{formatDate(order.created_at)}</Cell>
-                </tr>
-              )}
-            />
-          </Section>
-        </>
-      )}
+      <style>{`
+        .route-page { min-height: 100vh; padding: 24px; }
+        .route-terminal { overflow: hidden; border-radius: 24px; background: #020617; border: 1px solid rgba(148,163,184,.22); box-shadow: 0 24px 80px rgba(2,6,23,.28); }
+        .route-hero { display: flex; justify-content: space-between; gap: 18px; flex-wrap: wrap; align-items: center; padding: 26px clamp(18px,3vw,34px); background: radial-gradient(circle at top left, rgba(249,115,22,.24), transparent 34%), radial-gradient(circle at 75% 0%, rgba(34,197,94,.15), transparent 30%), #050b12; border-bottom: 1px solid rgba(148,163,184,.18); }
+        .route-hero h1 { margin: 14px 0 0; color: #f8fafc; font-size: clamp(34px,5vw,62px); line-height: .95; letter-spacing: 0; }
+        .route-hero p { margin: 12px 0 0; max-width: 760px; color: #cbd5e1; font-size: 16px; line-height: 1.6; }
+        .route-pills { display: flex; gap: 9px; flex-wrap: wrap; align-items: center; }
+        .route-pill { display: inline-flex; align-items: center; padding: 7px 12px; border-radius: 999px; border: 1px solid; font-size: 12px; font-weight: 900; text-transform: uppercase; letter-spacing: .5px; }
+        .route-controls, .route-actions, .route-form-actions { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+        .route-controls select, .route-create input, .route-create select { min-height: 44px; border-radius: 12px; border: 1px solid rgba(148,163,184,.28); background: rgba(15,23,42,.88); color: #f8fafc; padding: 10px 12px; outline: none; font-weight: 800; }
+        .route-controls select:first-child { min-width: 260px; }
+        .route-btn { border-radius: 12px; border: 1px solid rgba(148,163,184,.28); padding: 11px 14px; font-weight: 950; cursor: pointer; color: #f8fafc; background: rgba(15,23,42,.86); }
+        .route-btn.hot { background: #f97316; border-color: #f97316; color: white; }
+        .route-btn.danger { background: rgba(239,68,68,.14); border-color: rgba(239,68,68,.38); color: #fecaca; }
+        .route-btn:disabled { opacity: .55; cursor: not-allowed; }
+        .route-create { display: grid; grid-template-columns: repeat(auto-fit, minmax(185px, 1fr)); gap: 14px; padding: 24px; background: rgba(15,23,42,.7); border-bottom: 1px solid rgba(148,163,184,.18); }
+        .route-field { display: grid; gap: 8px; color: #cbd5e1; font-size: 12px; font-weight: 900; text-transform: uppercase; letter-spacing: .5px; }
+        .route-form-actions { align-self: end; justify-content: flex-end; }
+        .route-alert { padding: 14px 24px; border-bottom: 1px solid rgba(148,163,184,.18); font-weight: 900; }
+        .route-alert.good { color: #bbf7d0; background: rgba(20,83,45,.18); }
+        .route-alert.bad { color: #fecaca; background: rgba(127,29,29,.22); }
+        .route-no-cycle { margin: 30px; padding: 28px; border: 1px dashed rgba(148,163,184,.32); border-radius: 20px; background: rgba(15,23,42,.62); color: #cbd5e1; }
+        .route-no-cycle h2 { margin: 0; color: #f8fafc; }
+        .route-body { display: grid; gap: 22px; padding: 24px clamp(16px,3vw,30px) 30px; }
+        .route-live-head { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; align-items: center; }
+        .route-live-head h2 { margin: 12px 0 0; color: #f8fafc; font-size: clamp(24px,3vw,38px); }
+        .route-progress { display: grid; gap: 10px; color: #cbd5e1; font-weight: 900; }
+        .route-progress > div { display: flex; justify-content: space-between; gap: 14px; }
+        .route-progress-bar { height: 12px; border-radius: 999px; background: rgba(148,163,184,.15); overflow: hidden; }
+        .route-progress-bar i { display: block; height: 100%; border-radius: 999px; transition: width .35s ease; }
+        .route-stats, .route-grid-four { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 14px; }
+        .route-stat, .route-board { background: linear-gradient(180deg, rgba(15,23,42,.92), rgba(2,6,23,.92)); border: 1px solid rgba(148,163,184,.18); border-radius: 18px; box-shadow: inset 0 1px 0 rgba(255,255,255,.04); }
+        .route-stat { min-height: 118px; padding: 18px; }
+        .route-stat span { display: block; color: #94a3b8; font-size: 12px; font-weight: 950; letter-spacing: .5px; text-transform: uppercase; }
+        .route-stat strong { display: block; margin-top: 12px; color: #f8fafc; font-size: 27px; line-height: 1.05; }
+        .route-stat small { display: block; margin-top: 10px; font-size: 13px; font-weight: 850; }
+        .route-grid-main { display: grid; grid-template-columns: minmax(0,1.35fr) minmax(320px,.65fr); gap: 18px; }
+        .route-board { padding: 18px; min-width: 0; }
+        .route-board-head { display: flex; justify-content: space-between; gap: 12px; align-items: center; margin-bottom: 14px; }
+        .route-board h3 { margin: 0; color: #f8fafc; font-size: 16px; }
+        .route-empty, .route-list-empty { min-height: 180px; display: grid; place-items: center; color: #94a3b8; border: 1px dashed rgba(148,163,184,.25); border-radius: 18px; background: rgba(15,23,42,.5); font-weight: 850; text-align: center; padding: 18px; }
+        .route-chart-scroll { overflow-x: auto; padding-bottom: 6px; }
+        .route-chart { width: 100%; min-width: 680px; height: 320px; display: block; }
+        .route-rank-list, .route-tape, .route-events { display: grid; gap: 11px; max-height: 420px; overflow: auto; padding-right: 4px; }
+        .route-rank { display: grid; gap: 7px; }
+        .route-rank-top { display: flex; justify-content: space-between; gap: 12px; color: #e2e8f0; font-weight: 900; }
+        .route-rank-top strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .route-rank small, .route-tape small, .route-event small { color: #94a3b8; font-size: 12px; font-weight: 750; }
+        .route-rank-bar { height: 8px; background: rgba(148,163,184,.15); border-radius: 999px; overflow: hidden; }
+        .route-rank-bar i { display: block; height: 100%; border-radius: 999px; background: linear-gradient(90deg, #f97316, #22c55e); }
+        .route-tape-row { display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: center; padding: 12px; border-radius: 14px; background: rgba(2,6,23,.72); border: 1px solid rgba(148,163,184,.14); }
+        .route-tape-row strong, .route-event strong { display: block; color: #f8fafc; font-weight: 950; }
+        .route-tape-row b { display: block; color: #22c55e; text-align: right; }
+        .route-tape-row > div:first-child { min-width: 0; }
+        .route-tape-row > div:first-child strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .route-event { border-left: 3px solid; padding: 8px 0 8px 12px; }
+        @media (max-width: 1120px) { .route-grid-main { grid-template-columns: 1fr; } }
+        @media (max-width: 740px) { .route-page { padding: 12px; } .route-controls, .route-actions, .route-form-actions { width: 100%; } .route-controls select, .route-controls button, .route-actions button, .route-form-actions button { width: 100%; } .route-tape-row { grid-template-columns: 1fr; } .route-tape-row b { text-align: left; } }
+      `}</style>
     </div>
   );
 }
