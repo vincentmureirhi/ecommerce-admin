@@ -680,11 +680,11 @@ export default function Orders() {
           }}
         >
           <SummaryCard title="Total Orders" value={stats.total_orders || 0} subtitle="All recorded orders" c={c} />
+          <SummaryCard title="Route Money In" value={money(stats.route_money_in || 0)} subtitle={`${stats.route_orders || 0} route orders`} c={c} />
+          <SummaryCard title="Normal Money In" value={money(stats.normal_money_in || 0)} subtitle={`${stats.normal_orders || 0} normal orders`} c={c} />
+          <SummaryCard title="Combined Money In" value={money(stats.combined_money_in || stats.total_paid_amount || 0)} subtitle="Route plus normal" c={c} />
           <SummaryCard title="Printed / Acknowledged" value={stats.printed_orders || 0} subtitle="Already handled" c={c} />
           <SummaryCard title="Pending Print" value={stats.not_printed_orders || 0} subtitle="Still waiting" c={c} />
-          <SummaryCard title="Open Region Credit" value={stats.route_credit_open || 0} subtitle="Credit orders not cleared" c={c} />
-          <SummaryCard title="Outstanding Balance" value={money(stats.total_outstanding_balance || 0)} subtitle="Money still owed" c={c} />
-          <SummaryCard title="Overdue Region Orders" value={stats.overdue_route_orders || 0} subtitle="Need follow-up" c={c} />
         </div>
       )}
 

@@ -398,10 +398,10 @@ export default function Dashboard() {
                   isDark={isDark}
                   c={c}
                   icon="KSh"
-                  title="Sales Value"
-                  value={`KSh ${(kpis.booked_sales ?? kpis.revenue ?? 0).toLocaleString()}`}
+                  title="Combined Money In"
+                  value={`KSh ${(kpis.combined_money_in ?? kpis.revenue ?? 0).toLocaleString()}`}
                   trend={kpis.revenue_trend}
-                  subtitle={`Paid: KSh ${(kpis.revenue || 0).toLocaleString()}`}
+                  subtitle={`Normal: KSh ${(kpis.normal_money_in || 0).toLocaleString()} | Route: KSh ${(kpis.route_money_in || 0).toLocaleString()}`}
                   color="#667eea"
                   onClick={() => navigate('/orders')}
                 />

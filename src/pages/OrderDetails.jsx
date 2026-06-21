@@ -284,7 +284,7 @@ export default function OrderDetails() {
           </h1>
           <p style={{ margin: 0, color: c.textMuted, fontSize: 13 }}>
             {isRouteOrder
-              ? "Route customer delivery, dispatch readiness, and pay-on-delivery settlement"
+              ? "Route customer order, manifest printing, and route money recognition"
               : "Order details, fulfillment status, printing acknowledgment, and settlement tracking"}
           </p>
         </div>
@@ -409,78 +409,71 @@ export default function OrderDetails() {
           {isRouteOrder ? (
             <div style={card}>
               <h3 style={{ marginTop: 0, fontSize: 14, fontWeight: 700, marginBottom: 10, color: c.text }}>
-                Route Handoff
+                Route Manifest
               </h3>
 
-              <div style={{ marginBottom: 12 }}>
-                <div style={label}>Collection Method</div>
-                <div style={value}>Handled by delivery team / POS</div>
-                <div style={{ marginTop: 6, fontSize: 12, color: c.textMuted }}>
-                  Route customer payments are recorded outside this order screen.
-                </div>
-              </div>
-
-              <div style={{ marginBottom: 12 }}>
-                <div style={label}>Order Value</div>
-                <div style={value}>{money(order.total_amount)}</div>
-              </div>
-
-              <div style={{ marginBottom: 12 }}>
-                <div style={label}>Delivery Stage</div>
-                <div style={value}>{visibleStatusMeta.label}</div>
-              </div>
-
-              <div style={{ marginBottom: 12 }}>
-                <div style={label}>Picking State</div>
-                <div style={value}>{order.is_printed ? "Ready for dispatch" : "Print before dispatch"}</div>
-              </div>
-
-              <div style={{ marginBottom: 12 }}>
-                <div style={label}>Update Route Stage</div>
-                <select
-                  value={orderStatus}
-                  onChange={(e) => setOrderStatus(e.target.value)}
-                  style={inputStyle(c)}
-                >
-                  {ROUTE_STATUS_FLOW.map((step) => (
-                    <option key={step.value} value={step.value}>
-                      {step.label}
-                    </option>
-                  ))}
-                </select>
-                <button
-                  onClick={onSaveOrderStatus}
-                  disabled={savingOrderStatus || !hasOrderStatusChanges}
-                  style={{
-                    width: "100%",
-                    padding: "10px 12px",
-                    background: "#667eea",
-                    color: "white",
-                    border: "none",
-                    borderRadius: 6,
-                    cursor: savingOrderStatus ? "not-allowed" : "pointer",
-                    fontSize: 12,
-                    fontWeight: 700,
-                    marginTop: 10,
-                    opacity: savingOrderStatus || !hasOrderStatusChanges ? 0.7 : 1,
-                  }}
-                >
-                  {savingOrderStatus ? "Saving..." : hasOrderStatusChanges ? "Save Route Stage" : "Stage Up To Date"}
-                </button>
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
+                  gap: 10,
+                  marginBottom: 14,
+                }}
+              >
+                <MiniMetric c={c} label="Route money in" value={money(order.amount_paid || order.total_amount)} />
+                <MiniMetric c={c} label="Manifest" value={order.is_printed ? "Printed" : "Print needed"} />
+                <MiniMetric c={c} label="Sales rep" value={order.sales_rep_name || "Unassigned"} />
+                <MiniMetric c={c} label="Route area" value={order.location_name || order.region_name || "-"} />
               </div>
 
               <div
                 style={{
-                  border: `1px solid ${c.border}`,
-                  borderRadius: 8,
                   padding: 12,
-                  color: c.textMuted,
+                  borderRadius: 8,
+                  background: isDark ? "rgba(16, 185, 129, 0.12)" : "#ecfdf5",
+                  border: `1px solid ${isDark ? "rgba(16, 185, 129, 0.25)" : "#bbf7d0"}`,
+                  color: isDark ? "#86efac" : "#047857",
                   fontSize: 12,
                   lineHeight: 1.6,
+                  marginBottom: 12,
                 }}
               >
-                Update the route stage for warehouse and delivery planning. Payment collection is handled at delivery through POS.
+                This route order is counted under route money in. The delivery team or POS handles final cash collection outside normal online checkout.
               </div>
+
+              <div style={{ marginBottom: 12 }}>
+                <div style={label}>Customer</div>
+                <div style={value}>{order.customer_name || "N/A"}</div>
+              </div>
+
+              <div style={{ marginBottom: 12 }}>
+                <div style={label}>Phone</div>
+                <div style={value}>{order.customer_phone || "N/A"}</div>
+              </div>
+
+              <div style={{ marginBottom: 12 }}>
+                <div style={label}>Captured</div>
+                <div style={value}>{formatDateTime(order.created_at)}</div>
+              </div>
+
+              <button
+                onClick={onPrint}
+                disabled={printing}
+                style={{
+                  width: "100%",
+                  padding: "10px 12px",
+                  background: "#16a34a",
+                  color: "white",
+                  border: "none",
+                  borderRadius: 6,
+                  cursor: printing ? "not-allowed" : "pointer",
+                  fontSize: 12,
+                  fontWeight: 700,
+                  opacity: printing ? 0.7 : 1,
+                }}
+              >
+                {printing ? "Preparing..." : order.is_printed ? "Reprint Route Sheet" : "Print Route Sheet"}
+              </button>
             </div>
           ) : (
           <>
@@ -768,6 +761,27 @@ export default function OrderDetails() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function MiniMetric({ c, label, value }) {
+  return (
+    <div
+      style={{
+        border: `1px solid ${c.border}`,
+        borderRadius: 8,
+        padding: 10,
+        background: c.headerBg || "transparent",
+        minWidth: 0,
+      }}
+    >
+      <div style={{ fontSize: 10, textTransform: "uppercase", color: c.textMuted, fontWeight: 800, marginBottom: 4 }}>
+        {label}
+      </div>
+      <div style={{ fontSize: 13, color: c.text, fontWeight: 800, overflowWrap: "anywhere" }}>
+        {value}
+      </div>
     </div>
   );
 }

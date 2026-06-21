@@ -196,8 +196,24 @@ export const dashboardService = {
       OPEN_PAYMENT_STATUSES.has(String(p.status || "").toLowerCase())
     );
 
-    const revenue = completedPayments.reduce((sum, p) => sum + getPaidAmount(p), 0);
-    const previousRevenue = previousCompletedPayments.reduce((sum, p) => sum + getPaidAmount(p), 0);
+    const paymentRevenue = completedPayments.reduce((sum, p) => sum + getPaidAmount(p), 0);
+    const previousPaymentRevenue = previousCompletedPayments.reduce((sum, p) => sum + getPaidAmount(p), 0);
+    const routeMoneyIn = filteredOrders
+      .filter((o) => String(o.order_type || "normal").toLowerCase() === "route")
+      .reduce((sum, o) => sum + toNumber(o.amount_paid ?? o.total_amount), 0);
+    const previousRouteMoneyIn = previousOrders
+      .filter((o) => String(o.order_type || "normal").toLowerCase() === "route")
+      .reduce((sum, o) => sum + toNumber(o.amount_paid ?? o.total_amount), 0);
+    const orderNormalMoneyIn = filteredOrders
+      .filter((o) => String(o.order_type || "normal").toLowerCase() !== "route")
+      .reduce((sum, o) => sum + toNumber(o.amount_paid), 0);
+    const previousOrderNormalMoneyIn = previousOrders
+      .filter((o) => String(o.order_type || "normal").toLowerCase() !== "route")
+      .reduce((sum, o) => sum + toNumber(o.amount_paid), 0);
+    const normalMoneyIn = orderNormalMoneyIn || paymentRevenue;
+    const previousNormalMoneyIn = previousOrderNormalMoneyIn || previousPaymentRevenue;
+    const revenue = normalMoneyIn + routeMoneyIn;
+    const previousRevenue = previousNormalMoneyIn + previousRouteMoneyIn;
     const totalOrders = filteredOrders.length;
     const previousTotalOrders = previousOrders.length;
     const aov = totalOrders > 0 ? Math.round(revenue / totalOrders) : 0;
@@ -217,6 +233,10 @@ export const dashboardService = {
 
     return {
       revenue: Math.round(revenue),
+      payment_revenue: Math.round(paymentRevenue),
+      route_money_in: Math.round(routeMoneyIn),
+      normal_money_in: Math.round(normalMoneyIn),
+      combined_money_in: Math.round(revenue),
       orders: totalOrders,
       aov,
       payment_success_rate: paymentSuccessRate,
