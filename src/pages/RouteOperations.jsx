@@ -133,68 +133,129 @@ function Stat({ label, value, sub, color }) {
   );
 }
 
-function CandleChart({ candles = [], target }) {
+function CandleChart({ candles = [], target, summary = {} }) {
+  const [hoverIndex, setHoverIndex] = useState(null);
   const data = candles
     .map((item) => ({ ...item, open: n(item.open), high: n(item.high), low: n(item.low), close: n(item.close), volume: n(item.volume) }))
     .filter((item) => item.time);
 
   if (!data.length) return <div className="route-empty">Route candles will appear as orders are captured.</div>;
 
-  const width = 920;
-  const height = 320;
-  const left = 54;
-  const right = 24;
-  const top = 28;
-  const bottom = 58;
+  const width = 980;
+  const height = 390;
+  const left = 64;
+  const right = 72;
+  const top = 42;
+  const bottom = 76;
   const innerW = width - left - right;
   const innerH = height - top - bottom;
-  const max = Math.max(...data.map((item) => item.high), n(target), 1);
+  const projected = n(summary.projected_close_amount);
+  const targetValue = n(target);
+  const max = Math.max(...data.map((item) => item.high), targetValue, projected, 1);
   const min = Math.min(...data.map((item) => item.low), 0);
   const spread = Math.max(max - min, 1);
   const y = (value) => top + ((max - value) / spread) * innerH;
   const step = innerW / Math.max(data.length, 1);
   const bodyW = clamp(step * 0.48, 8, 24);
   const maxVol = Math.max(...data.map((item) => item.volume), 1);
-  const targetY = n(target) > 0 ? y(n(target)) : null;
+  const last = data[data.length - 1];
+  const previous = data[data.length - 2] || last;
+  const delta = last.close - previous.close;
+  const deltaColor = delta >= 0 ? "#22c55e" : "#ef4444";
+  const linePath = data.map((item, index) => `${index === 0 ? "M" : "L"} ${left + index * step + step / 2} ${y(item.close)}`).join(" ");
+  const hover = hoverIndex !== null ? data[hoverIndex] : null;
+  const hoverX = hoverIndex !== null ? left + hoverIndex * step + step / 2 : null;
+
+  const LineBadge = ({ value, label, color, dash }) => {
+    if (!n(value)) return null;
+    const lineY = y(n(value));
+    return (
+      <g>
+        <line x1={left} y1={lineY} x2={width - right} y2={lineY} stroke={color} strokeWidth="2" strokeDasharray={dash || ""} opacity="0.9" />
+        <rect x={width - right + 8} y={lineY - 13} width="58" height="26" rx="8" fill={`${color}22`} stroke={`${color}66`} />
+        <text x={width - right + 37} y={lineY + 4} textAnchor="middle" fill={color} fontSize="10" fontWeight="900">{label}</text>
+      </g>
+    );
+  };
 
   return (
-    <div className="route-chart-scroll">
-      <svg viewBox={`0 0 ${width} ${height}`} className="route-chart" role="img" aria-label="Route target candle chart">
-        <rect width={width} height={height} rx="20" fill="#020617" />
-        {[0, 0.25, 0.5, 0.75, 1].map((tick) => {
-          const lineY = top + tick * innerH;
-          const value = max - tick * spread;
-          return (
-            <g key={tick}>
-              <line x1={left} y1={lineY} x2={width - right} y2={lineY} stroke="rgba(148,163,184,.14)" />
-              <text x="10" y={lineY + 4} fill="#64748b" fontSize="11" fontWeight="800">{shortMoney(value).replace("KSh ", "")}</text>
+    <div className="route-chart-shell">
+      <div className="route-chart-toolbar">
+        <span><b>{shortMoney(last.close)}</b> latest value</span>
+        <span style={{ color: deltaColor }}>{delta >= 0 ? "+" : ""}{shortMoney(delta)} last block</span>
+        <span>{shortMoney(summary.projected_close_amount)} projected</span>
+        <span>{whole(summary.confidence_percent)}% confidence</span>
+      </div>
+      <div className="route-chart-stage">
+        <svg viewBox={`0 0 ${width} ${height}`} className="route-chart" role="img" aria-label="Trading style route target chart">
+          <defs>
+            <linearGradient id="routeArea" x1="0" x2="0" y1="0" y2="1">
+              <stop offset="0%" stopColor="#22c55e" stopOpacity="0.22" />
+              <stop offset="100%" stopColor="#22c55e" stopOpacity="0" />
+            </linearGradient>
+            <radialGradient id="routeGlow" cx="50%" cy="50%" r="60%">
+              <stop offset="0%" stopColor="#f97316" stopOpacity="0.9" />
+              <stop offset="100%" stopColor="#f97316" stopOpacity="0" />
+            </radialGradient>
+          </defs>
+          <rect width={width} height={height} rx="20" fill="#020617" />
+          {[0, 0.2, 0.4, 0.6, 0.8, 1].map((tick) => {
+            const lineY = top + tick * innerH;
+            const value = max - tick * spread;
+            return (
+              <g key={tick}>
+                <line x1={left} y1={lineY} x2={width - right} y2={lineY} stroke="rgba(148,163,184,.13)" />
+                <text x="12" y={lineY + 4} fill="#64748b" fontSize="11" fontWeight="800">{shortMoney(value).replace("KSh ", "")}</text>
+              </g>
+            );
+          })}
+          {data.map((_, index) => {
+            const x = left + index * step + step / 2;
+            return <line key={index} x1={x} y1={top} x2={x} y2={height - bottom} stroke="rgba(148,163,184,.06)" />;
+          })}
+          <path d={`${linePath} L ${left + (data.length - 1) * step + step / 2} ${height - bottom} L ${left} ${height - bottom} Z`} fill="url(#routeArea)" />
+          <path d={linePath} fill="none" stroke="#38bdf8" strokeWidth="2.5" opacity="0.9" />
+          <LineBadge value={targetValue} label="TARGET" color="#f97316" dash="8 7" />
+          <LineBadge value={projected} label="PROJ" color="#a78bfa" dash="4 6" />
+          <LineBadge value={last.close} label="LIVE" color={deltaColor} />
+          {data.map((item, index) => {
+            const x = left + index * step + step / 2;
+            const up = item.close >= item.open;
+            const color = up ? "#22c55e" : "#ef4444";
+            const openY = y(item.open);
+            const closeY = y(item.close);
+            const bodyY = Math.min(openY, closeY);
+            const bodyH = Math.max(Math.abs(openY - closeY), 5);
+            const volH = (item.volume / maxVol) * 38;
+            const isSpike = item.volume >= maxVol * 0.75 && maxVol > 1;
+            return (
+              <g key={`${item.time}-${index}`} onMouseEnter={() => setHoverIndex(index)} onMouseLeave={() => setHoverIndex(null)}>
+                <rect x={x - bodyW / 2} y={height - bottom + 44 - volH} width={bodyW} height={volH} rx="3" fill={`${color}38`} />
+                <line x1={x} y1={y(item.high)} x2={x} y2={y(item.low)} stroke={color} strokeWidth="2" strokeLinecap="round" />
+                <rect x={x - bodyW / 2} y={bodyY} width={bodyW} height={bodyH} rx="4" fill={color} />
+                {isSpike ? <circle cx={x} cy={y(item.high) - 11} r="10" fill="url(#routeGlow)" /> : null}
+                <rect x={x - step / 2} y={top} width={step} height={innerH + 50} fill="transparent" />
+              </g>
+            );
+          })}
+          {hover ? (
+            <g pointerEvents="none">
+              <line x1={hoverX} y1={top} x2={hoverX} y2={height - bottom} stroke="rgba(226,232,240,.45)" strokeDasharray="4 5" />
+              <circle cx={hoverX} cy={y(hover.close)} r="5" fill="#f8fafc" stroke="#38bdf8" strokeWidth="2" />
             </g>
-          );
-        })}
-        {targetY ? (
-          <g>
-            <line x1={left} y1={targetY} x2={width - right} y2={targetY} stroke="#f97316" strokeWidth="2" strokeDasharray="7 7" />
-            <text x={width - 98} y={Math.max(targetY - 8, 16)} fill="#fed7aa" fontSize="12" fontWeight="900">Target</text>
-          </g>
+          ) : null}
+        </svg>
+        {hover ? (
+          <div className="route-hover-card">
+            <strong>{dateText(hover.time)}</strong>
+            <span>Open {shortMoney(hover.open)}</span>
+            <span>High {shortMoney(hover.high)}</span>
+            <span>Low {shortMoney(hover.low)}</span>
+            <span>Close {shortMoney(hover.close)}</span>
+            <span>{whole(hover.volume)} orders</span>
+          </div>
         ) : null}
-        {data.map((item, index) => {
-          const x = left + index * step + step / 2;
-          const up = item.close >= item.open;
-          const color = up ? "#22c55e" : "#ef4444";
-          const openY = y(item.open);
-          const closeY = y(item.close);
-          const bodyY = Math.min(openY, closeY);
-          const bodyH = Math.max(Math.abs(openY - closeY), 5);
-          const volH = (item.volume / maxVol) * 32;
-          return (
-            <g key={`${item.time}-${index}`}>
-              <rect x={x - bodyW / 2} y={height - bottom + 34 - volH} width={bodyW} height={volH} rx="3" fill={`${color}33`} />
-              <line x1={x} y1={y(item.high)} x2={x} y2={y(item.low)} stroke={color} strokeWidth="2" strokeLinecap="round" />
-              <rect x={x - bodyW / 2} y={bodyY} width={bodyW} height={bodyH} rx="4" fill={color} />
-            </g>
-          );
-        })}
-      </svg>
+      </div>
     </div>
   );
 }
@@ -492,7 +553,7 @@ export default function RouteOperations() {
 
             <section className="route-grid-main">
               <Board title="Route value candles" action={<Pill color="#38bdf8">{intervalMinutes} min blocks</Pill>}>
-                <CandleChart candles={terminal?.candles || []} target={terminal?.target_line || summary.target_amount} />
+                <CandleChart candles={terminal?.candles || []} target={terminal?.target_line || summary.target_amount} summary={summary} />
               </Board>
               <Board title="Live order tape"><OrderTape orders={terminal?.live_order_tape || []} /></Board>
             </section>
@@ -550,8 +611,15 @@ export default function RouteOperations() {
         .route-board-head { display: flex; justify-content: space-between; gap: 12px; align-items: center; margin-bottom: 14px; }
         .route-board h3 { margin: 0; color: #f8fafc; font-size: 16px; }
         .route-empty, .route-list-empty { min-height: 180px; display: grid; place-items: center; color: #94a3b8; border: 1px dashed rgba(148,163,184,.25); border-radius: 18px; background: rgba(15,23,42,.5); font-weight: 850; text-align: center; padding: 18px; }
+        .route-chart-shell { display: grid; gap: 12px; }
+        .route-chart-toolbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+        .route-chart-toolbar span { display: inline-flex; align-items: center; gap: 6px; padding: 8px 11px; border-radius: 999px; background: rgba(15,23,42,.9); border: 1px solid rgba(148,163,184,.16); color: #cbd5e1; font-size: 12px; font-weight: 850; }
+        .route-chart-toolbar b { color: #f8fafc; }
+        .route-chart-stage { position: relative; overflow-x: auto; padding-bottom: 6px; }
+        .route-hover-card { position: absolute; top: 58px; right: 18px; z-index: 3; display: grid; gap: 5px; min-width: 160px; padding: 12px; border-radius: 14px; background: rgba(2,6,23,.94); border: 1px solid rgba(148,163,184,.28); color: #cbd5e1; box-shadow: 0 18px 40px rgba(0,0,0,.35); font-size: 12px; font-weight: 800; }
+        .route-hover-card strong { color: #f8fafc; font-size: 13px; }
         .route-chart-scroll { overflow-x: auto; padding-bottom: 6px; }
-        .route-chart { width: 100%; min-width: 680px; height: 320px; display: block; }
+        .route-chart { width: 100%; min-width: 680px; height: 390px; display: block; }
         .route-rank-list, .route-tape, .route-events { display: grid; gap: 11px; max-height: 420px; overflow: auto; padding-right: 4px; }
         .route-rank { display: grid; gap: 7px; }
         .route-rank-top { display: flex; justify-content: space-between; gap: 12px; color: #e2e8f0; font-weight: 900; }

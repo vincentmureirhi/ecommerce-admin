@@ -36,7 +36,8 @@ function SummaryCard({ title, value, subtitle, c, isDark }) {
 
 function formatDateTime(value) {
   if (!value) return "—";
-  return new Date(value).toLocaleString("en-US", {
+  return new Date(value).toLocaleString("en-KE", {
+    timeZone: "Africa/Nairobi",
     year: "numeric",
     month: "short",
     day: "numeric",
@@ -132,7 +133,7 @@ export default function SalesRepsLiveMap() {
 
   useEffect(() => {
     loadData();
-    const timer = setInterval(loadData, 10000);
+    const timer = setInterval(loadData, 5000);
     return () => clearInterval(timer);
   }, []);
 
