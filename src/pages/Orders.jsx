@@ -119,6 +119,33 @@ function getOrderStatusStyle(status, isDark) {
   };
 }
 
+function getRouteOrderState(order, isDark) {
+  if (String(order.order_status || "").toLowerCase() === "cancelled") {
+    return {
+      label: "Cancelled",
+      detail: "Removed from route sheet",
+      bg: isDark ? "rgba(220, 53, 69, 0.2)" : "#f8d7da",
+      color: isDark ? "#ff6b6b" : "#721c24",
+    };
+  }
+
+  if (order.is_printed) {
+    return {
+      label: "Route sheet printed",
+      detail: "Ready for delivery team",
+      bg: isDark ? "rgba(16, 185, 129, 0.2)" : "#d4edda",
+      color: isDark ? "#4ade80" : "#155724",
+    };
+  }
+
+  return {
+    label: "Route captured",
+    detail: "Print route sheet",
+    bg: isDark ? "rgba(59, 130, 246, 0.2)" : "#dbeafe",
+    color: isDark ? "#93c5fd" : "#1d4ed8",
+  };
+}
+
 function getSettlementStyle(order, isDark) {
   if (order.order_type === "route") {
     if (order.payment_state === "paid") {
@@ -810,9 +837,11 @@ export default function Orders() {
             </thead>
             <tbody>
               {rows.map((order, idx) => {
-                const orderStatusStyle = getOrderStatusStyle(order.order_status, isDark);
-                const orderStatusMeta = getOrderStatusMeta(order.order_status);
-                const nextStatusMeta = getOrderStatusMeta(orderStatusMeta.nextStatus);
+                const isRouteOrder = String(order.order_type || "").toLowerCase() === "route";
+                const routeState = isRouteOrder ? getRouteOrderState(order, isDark) : null;
+                const orderStatusStyle = routeState || getOrderStatusStyle(order.order_status, isDark);
+                const orderStatusMeta = isRouteOrder ? null : getOrderStatusMeta(order.order_status);
+                const nextStatusMeta = orderStatusMeta?.nextStatus ? getOrderStatusMeta(orderStatusMeta.nextStatus) : null;
                 const settlementStyle = getSettlementStyle(order, isDark);
                 const printedStyle = getPrintedStyle(order, isDark);
 
@@ -912,10 +941,12 @@ export default function Orders() {
                           fontWeight: 600,
                         }}
                         >
-                        {orderStatusMeta.icon} {orderStatusMeta.label}
+                        {isRouteOrder ? routeState.label : `${orderStatusMeta.icon} ${orderStatusMeta.label}`}
                       </span>
                       <div style={{ marginTop: 4, fontSize: 11, color: c.textMuted }}>
-                        {orderStatusMeta.nextStatus
+                        {isRouteOrder
+                          ? routeState.detail
+                          : orderStatusMeta.nextStatus
                           ? `Next: ${nextStatusMeta.label}`
                           : "Flow complete"}
                       </div>

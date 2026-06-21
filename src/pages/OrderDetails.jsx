@@ -426,21 +426,6 @@ export default function OrderDetails() {
                 <MiniMetric c={c} label="Route area" value={order.location_name || order.region_name || "-"} />
               </div>
 
-              <div
-                style={{
-                  padding: 12,
-                  borderRadius: 8,
-                  background: isDark ? "rgba(16, 185, 129, 0.12)" : "#ecfdf5",
-                  border: `1px solid ${isDark ? "rgba(16, 185, 129, 0.25)" : "#bbf7d0"}`,
-                  color: isDark ? "#86efac" : "#047857",
-                  fontSize: 12,
-                  lineHeight: 1.6,
-                  marginBottom: 12,
-                }}
-              >
-                This route order is counted under route money in. The delivery team or POS handles final cash collection outside normal online checkout.
-              </div>
-
               <div style={{ marginBottom: 12 }}>
                 <div style={label}>Customer</div>
                 <div style={value}>{order.customer_name || "N/A"}</div>
