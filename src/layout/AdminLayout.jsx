@@ -25,6 +25,7 @@ export default function AdminLayout({ children }) {
     { path: "/route-customer-access", label: "Route Portal Access", icon: "🔐" },
     { path: "/buying-customers", label: "Buying Customers", icon: "💰" },
     { path: "/flash-sales", label: "Flash Sales", icon: "⚡" },
+    { path: "/marketing", label: "Marketing", icon: "MKT" },
     { path: "/sales-reps", label: "Sales Reps", icon: "👤" },
     { path: "/sales-reps/live-map", label: "Live Rep Map", icon: "🛰️" },
     { path: "/inventory", label: "Inventory", icon: "📈" },

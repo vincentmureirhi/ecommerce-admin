@@ -15,6 +15,7 @@ import CustomerDetail from "./pages/CustomerDetail.jsx";
 import BuyingCustomers from "./pages/BuyingCustomers.jsx";
 import BuyingCustomerDetail from "./pages/BuyingCustomerDetail.jsx";
 import FlashSales from "./pages/FlashSales.jsx";
+import Marketing from "./pages/Marketing.jsx";
 import SalesReps from "./pages/SalesReps.jsx";
 import SalesRepDetail from "./pages/SalesRepDetail.jsx";
 import SalesRepTrack from "./pages/SalesRepTrack.jsx";
@@ -318,6 +319,16 @@ export default function App() {
         }
       />
 
+      <Route
+        path="/marketing"
+        element={
+          <AdminProtected>
+            <Shell>
+              <Marketing />
+            </Shell>
+          </AdminProtected>
+        }
+      />
       <Route
         path="/sales-reps"
         element={
