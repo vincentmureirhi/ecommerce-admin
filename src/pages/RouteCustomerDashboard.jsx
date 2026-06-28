@@ -439,6 +439,11 @@ export default function RouteCustomerDashboard() {
   const topProducts = dashboard?.top_products || [];
   const creditRequests = dashboard?.recent_credit_requests || [];
   const notices = dashboard?.portal_notices || [];
+  const routeRewards = dashboard?.route_rewards || {};
+  const rewardAccount = routeRewards.account || {};
+  const rewardActivity = routeRewards.recent_activity || [];
+  const regionalOffers = dashboard?.regional_offers || [];
+  const referral = dashboard?.referral || null;
   const creditUsagePercent = clampPercent(insights.credit_usage_percent);
   const latestOrder = recentOrders[0] || null;
   const regionRankText = regionRank?.region_rank
@@ -683,6 +688,49 @@ export default function RouteCustomerDashboard() {
             </div>
           </div>
         </section>
+
+        <section style={{ display: "grid", gap: 14, gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", marginBottom: 18 }}>
+          <SectionCard title="Route rewards" colors={colors}>
+            <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(2, minmax(0, 1fr))" }}>
+              <SummaryCard title="Points" value={Number(rewardAccount.points_balance || 0).toLocaleString()} subtitle="Available balance" colors={colors} />
+              <SummaryCard title="Tier" value={String(rewardAccount.tier || "starter").toUpperCase()} subtitle={`${Number(rewardAccount.lifetime_points || 0).toLocaleString()} lifetime points`} colors={colors} />
+            </div>
+            {rewardActivity.length > 0 ? (
+              <div style={{ marginTop: 12, display: "grid", gap: 7 }}>
+                {rewardActivity.slice(0, 3).map((entry) => (
+                  <div key={entry.id} style={{ display: "flex", justifyContent: "space-between", gap: 10, color: colors.textMuted, fontSize: 13 }}>
+                    <span>{entry.description || "Route reward"}</span><strong style={{ color: "#16a34a" }}>+{entry.points}</strong>
+                  </div>
+                ))}
+              </div>
+            ) : <div style={{ marginTop: 12, color: colors.textMuted }}>Points begin with your next route order.</div>}
+          </SectionCard>
+
+          <SectionCard title="Invite a business" colors={colors}>
+            {referral ? (
+              <div style={{ display: "grid", gap: 12 }}>
+                <div style={{ color: colors.textMuted }}>Share your sales rep code with another shop applying for route delivery.</div>
+                <div style={{ padding: 14, borderRadius: 12, border: `1px dashed ${colors.border}`, fontSize: 22, fontWeight: 950, letterSpacing: 1 }}>{referral.code}</div>
+                <button type="button" onClick={() => navigator.clipboard?.writeText(`https://xpose-distributors.vercel.app/route-delivery?ref=${encodeURIComponent(referral.code)}`)} style={{ padding: "11px 14px", border: 0, borderRadius: 10, background: colors.accent, color: "#fff", fontWeight: 900, cursor: "pointer" }}>Copy application link</button>
+              </div>
+            ) : <div style={{ color: colors.textMuted }}>Your referral code will appear after a sales rep is assigned.</div>}
+          </SectionCard>
+        </section>
+
+        {regionalOffers.length > 0 ? (
+          <SectionCard title="Offers for your route" colors={colors}>
+            <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fit, minmax(230px, 1fr))" }}>
+              {regionalOffers.map((offer) => (
+                <div key={offer.id} style={{ border: `1px solid ${colors.border}`, borderRadius: 14, padding: 16, borderTop: `4px solid ${offer.accent_color || "#f97316"}` }}>
+                  <div style={{ fontSize: 12, fontWeight: 900, color: colors.textMuted }}>{offer.badge_label || "ROUTE OFFER"}</div>
+                  <div style={{ marginTop: 7, fontSize: 20, fontWeight: 950 }}>{offer.hero_title || offer.name}</div>
+                  <div style={{ marginTop: 7, color: colors.textMuted }}>{offer.hero_subtitle || offer.description}</div>
+                  {(offer.coupons || []).map((coupon) => <div key={coupon.code} style={{ marginTop: 10, fontWeight: 900 }}>Code: {coupon.code}</div>)}
+                </div>
+              ))}
+            </div>
+          </SectionCard>
+        ) : null}
 
         {(passwordOpen || securityNeedsAttention || passwordMessage) ? (
           <SectionCard title="Account security" colors={colors}>
