@@ -39,6 +39,17 @@ const campaignDefaults = {
   sms_message: "",
   sms_audience: "campaign_scope",
   description: "",
+  is_collection: false,
+  collection_slug: "",
+  rule_mode: "manual",
+  rule_terms: "",
+  rule_max_price: "",
+  homepage_section: "",
+  product_limit: 12,
+  seo_title: "",
+  seo_description: "",
+  hero_image_url: "",
+  share_image_url: "",
 };
 
 const couponDefaults = {
@@ -91,6 +102,26 @@ function numberOrNull(value) {
 }
 
 function formatDate(value) {
+function buildAutomaticRules(form) {
+  const terms = String(form.rule_terms || "").split(",").map((value) => value.trim()).filter(Boolean);
+  switch (form.rule_mode) {
+    case "trending":
+      return { sort: "trending" };
+    case "newest":
+      return { sort: "newest" };
+    case "under_price":
+      return { max_price: numberOrNull(form.rule_max_price) || 500, sort: "price-asc" };
+    case "wholesale":
+      return { wholesale: true, sort: "price-asc" };
+    case "flash":
+      return { flash: true, sort: "featured" };
+    case "search":
+      return { search_terms: terms };
+    default:
+      return {};
+  }
+}
+
   if (!value) return "Open";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "Open";
@@ -236,6 +267,12 @@ export default function Marketing() {
         priority: Number(campaignForm.priority || 0),
         starts_at: toIso(campaignForm.starts_at),
         ends_at: toIso(campaignForm.ends_at),
+        collection_slug: campaignForm.is_collection
+          ? (campaignForm.collection_slug || campaignForm.name).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "")
+          : null,
+        automatic_rules: buildAutomaticRules(campaignForm),
+        product_limit: Math.min(Math.max(Number(campaignForm.product_limit) || 12, 4), 24),
+        published_at: campaignForm.is_collection && campaignForm.status === "active" ? new Date().toISOString() : null,
       });
       setCampaignForm(campaignDefaults);
       notify("Campaign created");
@@ -328,6 +365,25 @@ export default function Marketing() {
           <h2 style={{ marginTop: 0 }}>Create campaign</h2>
           <form onSubmit={submitCampaign} style={{ display: "grid", gap: 11 }}>
             <Field label="Name"><input required style={inputStyle} value={campaignForm.name} onChange={(e) => setCampaignForm({ ...campaignForm, name: e.target.value })} /></Field>
+            <Toggle label="Publish as shareable collection" checked={campaignForm.is_collection} onChange={(value) => setCampaignForm({ ...campaignForm, is_collection: value })} />
+            {campaignForm.is_collection && (
+              <div style={{ display: "grid", gap: 10, padding: 12, border: `1px solid ${colors.border}`, borderRadius: 10 }}>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: 9 }}>
+                  <Field label="Shareable slug"><input style={inputStyle} placeholder="under-500" value={campaignForm.collection_slug} onChange={(e) => setCampaignForm({ ...campaignForm, collection_slug: e.target.value })} /></Field>
+                  <Field label="Product limit"><input type="number" min="4" max="24" style={inputStyle} value={campaignForm.product_limit} onChange={(e) => setCampaignForm({ ...campaignForm, product_limit: e.target.value })} /></Field>
+                </div>
+                <Field label="Automatic rule"><select style={inputStyle} value={campaignForm.rule_mode} onChange={(e) => setCampaignForm({ ...campaignForm, rule_mode: e.target.value })}><option value="manual">Manual targets</option><option value="trending">Trending</option><option value="newest">New arrivals</option><option value="under_price">Under a price</option><option value="wholesale">Wholesale tiers</option><option value="flash">Active flash deals</option><option value="search">Search terms</option></select></Field>
+                {campaignForm.rule_mode === "search" && <Field label="Search terms"><input style={inputStyle} placeholder="baby, diaper, wipes" value={campaignForm.rule_terms} onChange={(e) => setCampaignForm({ ...campaignForm, rule_terms: e.target.value })} /></Field>}
+                {campaignForm.rule_mode === "under_price" && <Field label="Maximum price"><input type="number" min="1" style={inputStyle} value={campaignForm.rule_max_price} onChange={(e) => setCampaignForm({ ...campaignForm, rule_max_price: e.target.value })} /></Field>}
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: 9 }}>
+                  <Field label="Homepage section"><input style={inputStyle} placeholder="under_500" value={campaignForm.homepage_section} onChange={(e) => setCampaignForm({ ...campaignForm, homepage_section: e.target.value })} /></Field>
+                  <Field label="Hero image URL"><input style={inputStyle} value={campaignForm.hero_image_url} onChange={(e) => setCampaignForm({ ...campaignForm, hero_image_url: e.target.value })} /></Field>
+                </div>
+                <Field label="SEO title"><input maxLength={180} style={inputStyle} value={campaignForm.seo_title} onChange={(e) => setCampaignForm({ ...campaignForm, seo_title: e.target.value })} /></Field>
+                <Field label="SEO description"><textarea maxLength={320} rows={2} style={inputStyle} value={campaignForm.seo_description} onChange={(e) => setCampaignForm({ ...campaignForm, seo_description: e.target.value })} /></Field>
+                <Field label="Share image URL"><input style={inputStyle} value={campaignForm.share_image_url} onChange={(e) => setCampaignForm({ ...campaignForm, share_image_url: e.target.value })} /></Field>
+              </div>
+            )}
             <div style={{ display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: 9 }}>
               <Field label="Type"><select style={inputStyle} value={campaignForm.campaign_type} onChange={(e) => setCampaignForm({ ...campaignForm, campaign_type: e.target.value })}><option value="general">General</option><option value="flash">Flash</option><option value="bundle">Bulk</option><option value="route">Route</option><option value="referral">Referral</option><option value="clearance">Clearance</option></select></Field>
               <Field label="Status"><select style={inputStyle} value={campaignForm.status} onChange={(e) => setCampaignForm({ ...campaignForm, status: e.target.value })}><option value="draft">Draft</option><option value="active">Active</option><option value="paused">Paused</option></select></Field>
