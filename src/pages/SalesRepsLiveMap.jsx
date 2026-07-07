@@ -60,12 +60,19 @@ function getFreshness(recordedAt) {
 
 function getAccuracyMeta(value) {
   const accuracy = Number(value);
-  if (!Number.isFinite(accuracy)) {
-    return { label: "No accuracy", tone: "neutral" };
-  }
-  if (accuracy <= 50) return { label: `High accuracy (${Math.round(accuracy)}m)`, tone: "success" };
-  if (accuracy <= 150) return { label: `Usable accuracy (${Math.round(accuracy)}m)`, tone: "warning" };
-  return { label: `Wide radius (${Math.round(accuracy)}m)`, tone: "danger" };
+  if (!Number.isFinite(accuracy)) return { label: "Accuracy unknown", tone: "neutral" };
+  if (accuracy <= 50) return { label: `Precise (${Math.round(accuracy)}m radius)`, tone: "success" };
+  if (accuracy <= 250) return { label: `Good (${Math.round(accuracy)}m radius)`, tone: "success" };
+  if (accuracy <= 1000) return { label: `Approximate (${Math.round(accuracy)}m radius)`, tone: "warning" };
+  return { label: `Very approximate (${Math.round(accuracy)}m radius)`, tone: "danger" };
+}
+
+function getMapZoom(value) {
+  const accuracy = Number(value);
+  if (!Number.isFinite(accuracy) || accuracy <= 50) return 18;
+  if (accuracy <= 250) return 16;
+  if (accuracy <= 1000) return 14;
+  return 12;
 }
 
 function getBadgeStyles(tone, isDark) {
@@ -171,7 +178,7 @@ export default function SalesRepsLiveMap() {
     selectedRep.longitude !== undefined;
 
   const mapSrc = hasCoords
-    ? `https://maps.google.com/maps?q=${selectedRep.latitude},${selectedRep.longitude}&t=k&z=18&output=embed`
+    ? `https://maps.google.com/maps?q=${selectedRep.latitude},${selectedRep.longitude}&t=k&z=${getMapZoom(selectedRep.accuracy_meters)}&output=embed`
     : null;
 
   if (loading) {
@@ -215,7 +222,7 @@ export default function SalesRepsLiveMap() {
             🛰️ Sales Reps Live Map
           </h1>
           <p style={{ margin: 0, color: c.textMuted, fontSize: 13 }}>
-            Boss view for all reps with latest known location and freshness
+            Latest reported rep locations, freshness and honest accuracy radius
           </p>
         </div>
 
@@ -451,7 +458,7 @@ export default function SalesRepsLiveMap() {
                     Last updated: {formatDateTime(selectedRep.recorded_at)}
                   </div>
                   <div style={{ fontSize: 12, color: c.textMuted, marginTop: 4 }}>
-                    Accuracy: {getAccuracyMeta(selectedRep.accuracy_meters).label} | Source: {selectedRep.source || "web"}
+                    Accuracy: {getAccuracyMeta(selectedRep.accuracy_meters).label} | Source: {selectedRep.source || "web"}. The map is centered on the reported point and zoomed to match its accuracy.
                   </div>
                 </div>
 
