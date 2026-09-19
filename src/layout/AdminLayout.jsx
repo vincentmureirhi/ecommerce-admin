@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { useTheme } from "../context/ThemeContext";
@@ -70,21 +70,54 @@ export default function AdminLayout({ children }) {
 
   const c = isDark ? colors.dark : colors.light;
 
+  useEffect(() => {
+    const handleKeyDown = (event) => {
+      if (event.key === "Escape") setSidebarOpen(false);
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
+
+  useEffect(() => {
+    const isMobile = window.matchMedia("(max-width: 768px)").matches;
+    if (isMobile) setSidebarOpen(false);
+  }, [loc.pathname]);
+
   return (
-    <div style={{ display: "flex", width: "100%", height: "100%", background: c.bg }}>
-      <div
+    <div
+      className="admin-shell"
+      style={{
+        display: "flex",
+        width: "100%",
+        minHeight: "100dvh",
+        background: c.bg,
+      }}
+    >
+      {sidebarOpen && (
+        <button
+          type="button"
+          aria-label="Close navigation"
+          className="admin-sidebar-backdrop"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
+
+      <aside
+        className={`admin-sidebar ${sidebarOpen ? "is-open" : "is-closed"}`}
         style={{
           width: sidebarOpen ? 250 : 80,
           background: c.sidebar,
           color: "white",
-          transition: "width 0.3s ease",
+          transition: "width 0.3s ease, transform 0.25s ease",
           overflowY: "auto",
+          overflowX: "hidden",
           padding: "20px 0",
           position: "fixed",
-          height: "100vh",
+          height: "100dvh",
           zIndex: 1000,
           boxShadow: "2px 0 8px rgba(0,0,0,0.2)",
           flexShrink: 0,
+          WebkitOverflowScrolling: "touch",
         }}
       >
         <div
@@ -97,13 +130,17 @@ export default function AdminLayout({ children }) {
             transition: "all 0.3s",
             color: "#667eea",
             cursor: "pointer",
+            whiteSpace: "nowrap",
           }}
-          onClick={() => nav("/")}
+          onClick={() => {
+            nav("/");
+            if (window.matchMedia("(max-width: 768px)").matches) setSidebarOpen(false);
+          }}
         >
           {sidebarOpen ? "🛍️ Admin" : "🛍️"}
         </div>
 
-        <nav style={{ flex: 1 }}>
+        <nav>
           {menuItems.map((item) => {
             if (
               item.path === "/admin-management" &&
@@ -116,7 +153,10 @@ export default function AdminLayout({ children }) {
             return (
               <div
                 key={item.path}
-                onClick={() => nav(item.path)}
+                onClick={() => {
+                  nav(item.path);
+                  if (window.matchMedia("(max-width: 768px)").matches) setSidebarOpen(false);
+                }}
                 style={{
                   padding: sidebarOpen ? "12px 20px" : "12px 27px",
                   display: "flex",
@@ -128,6 +168,7 @@ export default function AdminLayout({ children }) {
                   borderLeft: isActive(item.path) ? "3px solid #667eea" : "3px solid transparent",
                   color: isActive(item.path) ? "#667eea" : "#cbd5e1",
                   marginBottom: 4,
+                  minHeight: 44,
                 }}
                 onMouseEnter={(e) => {
                   if (!isActive(item.path)) {
@@ -142,11 +183,13 @@ export default function AdminLayout({ children }) {
                   }
                 }}
               >
-                <div style={{ fontSize: 18, minWidth: 24, textAlign: "center" }}>
+                <div style={{ fontSize: 18, minWidth: 24, textAlign: "center", flexShrink: 0 }}>
                   {item.icon}
                 </div>
                 {sidebarOpen && (
-                  <span style={{ fontSize: 13, fontWeight: 500 }}>{item.label}</span>
+                  <span style={{ fontSize: 13, fontWeight: 500, whiteSpace: "nowrap" }}>
+                    {item.label}
+                  </span>
                 )}
               </div>
             );
@@ -158,6 +201,7 @@ export default function AdminLayout({ children }) {
             padding: sidebarOpen ? "20px 20px 0" : "20px 0 0",
             borderTop: "1px solid rgba(255,255,255,0.1)",
             paddingTop: 20,
+            marginTop: 8,
           }}
         >
           <div
@@ -173,6 +217,7 @@ export default function AdminLayout({ children }) {
               fontSize: 13,
               fontWeight: 500,
               borderRadius: 6,
+              minHeight: 44,
             }}
             onMouseEnter={(e) => {
               e.currentTarget.style.background = "rgba(220, 53, 69, 0.2)";
@@ -187,20 +232,23 @@ export default function AdminLayout({ children }) {
             {sidebarOpen && <span>Logout</span>}
           </div>
         </div>
-      </div>
+      </aside>
 
       <div
+        className="admin-main"
         style={{
           marginLeft: sidebarOpen ? 250 : 80,
           flex: 1,
+          minWidth: 0,
           display: "flex",
           flexDirection: "column",
-          overflow: "hidden",
+          minHeight: "100dvh",
           transition: "margin-left 0.3s ease",
           width: "100%",
         }}
       >
-        <div
+        <header
+          className="admin-topbar"
           style={{
             background: c.topbar,
             borderBottom: `1px solid ${c.topbarBorder}`,
@@ -208,31 +256,44 @@ export default function AdminLayout({ children }) {
             display: "flex",
             justifyContent: "space-between",
             alignItems: "center",
+            gap: 12,
+            minHeight: 58,
             boxShadow: "0 1px 3px rgba(0,0,0,0.05)",
             flexShrink: 0,
+            position: "sticky",
+            top: 0,
+            zIndex: 900,
           }}
         >
           <button
+            type="button"
+            aria-label={sidebarOpen ? "Close navigation" : "Open navigation"}
             onClick={() => setSidebarOpen(!sidebarOpen)}
+            className="admin-menu-button"
             style={{
               background: "none",
               border: "none",
-              fontSize: 20,
+              fontSize: 22,
               cursor: "pointer",
               color: c.text,
-              padding: 0,
+              padding: "8px",
+              minWidth: 44,
+              minHeight: 44,
+              borderRadius: 8,
+              flexShrink: 0,
             }}
           >
             ☰
           </button>
 
-          <div style={{ display: "flex", gap: "15px", alignItems: "center" }}>
-            <div style={{ fontSize: 12, color: c.textMuted }}>
+          <div className="admin-topbar-right" style={{ display: "flex", gap: 15, alignItems: "center", minWidth: 0 }}>
+            <div className="admin-welcome" style={{ fontSize: 12, color: c.textMuted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
               👋 Welcome back, {user?.email || "Admin"}!
             </div>
 
             <button
               onClick={toggleTheme}
+              aria-label={isDark ? "Light Mode" : "Dark Mode"}
               style={{
                 background: "none",
                 border: "none",
@@ -241,17 +302,22 @@ export default function AdminLayout({ children }) {
                 color: c.text,
                 padding: "6px 10px",
                 borderRadius: "6px",
+                minWidth: 40,
+                minHeight: 40,
+                flexShrink: 0,
               }}
               title={isDark ? "Light Mode" : "Dark Mode"}
             >
               {isDark ? "☀️" : "🌙"}
             </button>
           </div>
-        </div>
+        </header>
 
-        <div
+        <main
+          className="admin-content"
           style={{
             flex: 1,
+            minWidth: 0,
             overflowY: "auto",
             overflowX: "hidden",
             padding: "20px",
@@ -260,8 +326,10 @@ export default function AdminLayout({ children }) {
             background: c.bg,
           }}
         >
-          <div style={{ width: "100%", boxSizing: "border-box" }}>{children}</div>
-        </div>
+          <div className="admin-content-inner" style={{ width: "100%", minWidth: 0, boxSizing: "border-box" }}>
+            {children}
+          </div>
+        </main>
       </div>
     </div>
   );
