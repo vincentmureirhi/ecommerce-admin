@@ -1,7 +1,7 @@
 import React from "react";
 import { useTheme } from "../context/ThemeContext";
 
-const COMPANY_NAME = "Xpose Distributors";
+const COMPANY_NAME = "Xpose Beauty Shop Limited";
 const RECEIVING_EMAIL = "vinwambug@gmail.com";
 
 function SectionTitle({ children, colors }) {
