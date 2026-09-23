@@ -172,7 +172,7 @@ export default function TermsConditions() {
               rows={24}
               value={content}
               onChange={(e) => setContent(e.target.value)}
-              placeholder={`Enter your Terms & Conditions here...\n\nExample:\n\n1. Introduction\nWelcome to Xpose Distributors...\n\n2. Orders & Payments\nAll orders are subject to...\n\n3. Delivery\nWe deliver across Kenya...`}
+              placeholder={`Enter your Terms & Conditions here...\n\nExample:\n\n1. Introduction\nWelcome to Xpose Beauty Shop Limited...\n\n2. Orders & Payments\nAll orders are subject to...\n\n3. Delivery\nWe deliver across Kenya...`}
               style={inputStyle}
             />
 
