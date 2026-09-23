@@ -132,7 +132,7 @@ export default function RouteCustomerLogin() {
                 lineHeight: 1.15,
               }}
             >
-              Xpose Distributors
+              Xpose Beauty Shop Limited
             </div>
 
             <div
