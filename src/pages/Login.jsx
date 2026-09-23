@@ -148,7 +148,7 @@ export default function Login() {
                 color: colors.text,
               }}
             >
-              Xpose Distributors
+              Xpose Beauty Shop Limited
             </div>
 
             <div
