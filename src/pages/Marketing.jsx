@@ -101,7 +101,6 @@ function numberOrNull(value) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-function formatDate(value) {
 function buildAutomaticRules(form) {
   const terms = String(form.rule_terms || "").split(",").map((value) => value.trim()).filter(Boolean);
   switch (form.rule_mode) {
@@ -122,6 +121,7 @@ function buildAutomaticRules(form) {
   }
 }
 
+function formatDate(value) {
   if (!value) return "Open";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "Open";
