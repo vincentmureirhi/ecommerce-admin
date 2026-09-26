@@ -193,7 +193,7 @@ export default function Marketing() {
   const [couponForm, setCouponForm] = useState(couponDefaults);
   const [selectedCampaignId, setSelectedCampaignId] = useState("");
   const [editingCampaignId, setEditingCampaignId] = useState(null);
-  const [targetIds, setTargetIds = useState({ product_ids: [], category_ids: [], region_ids: [] });
+  const [targetIds, setTargetIds] = useState({ product_ids: [], category_ids: [], region_ids: [] });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
