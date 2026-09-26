@@ -192,7 +192,8 @@ export default function Marketing() {
   const [campaignForm, setCampaignForm] = useState(campaignDefaults);
   const [couponForm, setCouponForm] = useState(couponDefaults);
   const [selectedCampaignId, setSelectedCampaignId] = useState("");
-  const [targetIds, setTargetIds] = useState({ product_ids: [], category_ids: [], region_ids: [] });
+  const [editingCampaignId, setEditingCampaignId] = useState(null);
+  const [targetIds, setTargetIds = useState({ product_ids: [], category_ids: [], region_ids: [] });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -258,11 +259,42 @@ export default function Marketing() {
     }
   }
 
+  function campaignDateTimeLocal(value) {
+    if (!value) return "";
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "";
+    const pad = (number) => String(number).padStart(2, "0");
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  }
+
+  function editCampaign(campaign) {
+    setEditingCampaignId(campaign.id);
+    setCampaignForm({
+      ...campaignDefaults,
+      ...campaign,
+      starts_at: campaignDateTimeLocal(campaign.starts_at),
+      ends_at: campaignDateTimeLocal(campaign.ends_at),
+      priority: Number(campaign.priority || 0),
+      product_limit: Number(campaign.product_limit || 12),
+      sms_enabled: Boolean(campaign.sms_enabled),
+      auto_activate: Boolean(campaign.auto_activate),
+      auto_expire: Boolean(campaign.auto_expire),
+      is_collection: Boolean(campaign.is_collection),
+      automatic_rules: campaign.automatic_rules || {},
+    });
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  function cancelCampaignEdit() {
+    setEditingCampaignId(null);
+    setCampaignForm(campaignDefaults);
+  }
+
   async function submitCampaign(event) {
     event.preventDefault();
     setSaving(true); setError("");
     try {
-      await createMarketingCampaign({
+      const payload = {
         ...campaignForm,
         priority: Number(campaignForm.priority || 0),
         starts_at: toIso(campaignForm.starts_at),
@@ -270,15 +302,28 @@ export default function Marketing() {
         collection_slug: campaignForm.is_collection
           ? (campaignForm.collection_slug || campaignForm.name).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "")
           : null,
-        automatic_rules: buildAutomaticRules(campaignForm),
+        automatic_rules: editingCampaignId && campaignForm.automatic_rules && Object.keys(campaignForm.automatic_rules).length
+          ? campaignForm.automatic_rules
+          : buildAutomaticRules(campaignForm),
         product_limit: Math.min(Math.max(Number(campaignForm.product_limit) || 12, 4), 24),
-        published_at: campaignForm.is_collection && campaignForm.status === "active" ? new Date().toISOString() : null,
-      });
+        published_at: campaignForm.is_collection && campaignForm.status === "active"
+          ? (editingCampaignId ? (campaignForm.published_at || new Date().toISOString()) : new Date().toISOString())
+          : null,
+      };
+
+      if (editingCampaignId) {
+        await updateMarketingCampaign(editingCampaignId, payload);
+        notify("Campaign updated");
+      } else {
+        await createMarketingCampaign(payload);
+        notify("Campaign created");
+      }
+
+      setEditingCampaignId(null);
       setCampaignForm(campaignDefaults);
-      notify("Campaign created");
       await loadDashboard();
     } catch (err) {
-      setError(err?.response?.data?.message || err?.message || "Campaign could not be created");
+      setError(err?.response?.data?.message || err?.message || "Campaign could not be saved");
     } finally { setSaving(false); }
   }
 
@@ -362,7 +407,10 @@ export default function Marketing() {
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(330px,1fr))", gap: 15 }}>
         <Card color={colors.card}>
-          <h2 style={{ marginTop: 0 }}>Create campaign</h2>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
+            <h2 style={{ marginTop: 0 }}>{editingCampaignId ? "Edit campaign" : "Create campaign"}</h2>
+            {editingCampaignId && <button type="button" onClick={cancelCampaignEdit} style={{ ...buttonStyle, background: colors.border, color: colors.text }}>Cancel</button>}
+          </div>
           <form onSubmit={submitCampaign} style={{ display: "grid", gap: 11 }}>
             <Field label="Name"><input required style={inputStyle} value={campaignForm.name} onChange={(e) => setCampaignForm({ ...campaignForm, name: e.target.value })} /></Field>
             <Toggle label="Publish as shareable collection" checked={campaignForm.is_collection} onChange={(value) => setCampaignForm({ ...campaignForm, is_collection: value })} />
@@ -389,13 +437,14 @@ export default function Marketing() {
               <Field label="Status"><select style={inputStyle} value={campaignForm.status} onChange={(e) => setCampaignForm({ ...campaignForm, status: e.target.value })}><option value="draft">Draft</option><option value="active">Active</option><option value="paused">Paused</option></select></Field>
               <Field label="Audience"><select style={inputStyle} value={campaignForm.customer_scope} onChange={(e) => setCampaignForm({ ...campaignForm, customer_scope: e.target.value })}><option value="all">Everyone</option><option value="normal">Storefront</option><option value="route">Route customers</option><option value="vendor">Vendors</option></select></Field>
               <Field label="Placement"><select style={inputStyle} value={campaignForm.placement} onChange={(e) => setCampaignForm({ ...campaignForm, placement: e.target.value })}><option value="home">Home</option><option value="shop">Shop</option><option value="checkout">Checkout</option><option value="route_portal">Route portal</option><option value="all">Everywhere</option></select></Field>
+              <Field label="Priority"><input type="number" step="1" style={inputStyle} value={campaignForm.priority} onChange={(e) => setCampaignForm({ ...campaignForm, priority: e.target.value })} /><span style={{ fontSize: 11, color: colors.textMuted, textTransform: "none" }}>Higher priority appears first on the customer campaign spotlight.</span></Field>
             </div>
             <Field label="Headline"><input style={inputStyle} value={campaignForm.hero_title} onChange={(e) => setCampaignForm({ ...campaignForm, hero_title: e.target.value })} /></Field>
             <Field label="Campaign message"><textarea rows={2} style={inputStyle} value={campaignForm.hero_subtitle} onChange={(e) => setCampaignForm({ ...campaignForm, hero_subtitle: e.target.value })} /></Field>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: 9 }}><Field label="Starts"><input type="datetime-local" style={inputStyle} value={campaignForm.starts_at} onChange={(e) => setCampaignForm({ ...campaignForm, starts_at: e.target.value })} /></Field><Field label="Ends"><input type="datetime-local" style={inputStyle} value={campaignForm.ends_at} onChange={(e) => setCampaignForm({ ...campaignForm, ends_at: e.target.value })} /></Field></div>
             <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}><Toggle label="Auto start" checked={campaignForm.auto_activate} onChange={(value) => setCampaignForm({ ...campaignForm, auto_activate: value })} /><Toggle label="Auto end" checked={campaignForm.auto_expire} onChange={(value) => setCampaignForm({ ...campaignForm, auto_expire: value })} /><Toggle label="SMS opt-in audience" checked={campaignForm.sms_enabled} onChange={(value) => setCampaignForm({ ...campaignForm, sms_enabled: value })} /></div>
             {campaignForm.sms_enabled && <Field label="SMS message"><textarea maxLength={300} rows={2} style={inputStyle} value={campaignForm.sms_message} onChange={(e) => setCampaignForm({ ...campaignForm, sms_message: e.target.value })} /></Field>}
-            <button disabled={saving} style={{ ...buttonStyle, background: "#f97316", color: "#fff" }}>{saving ? "Saving..." : "Create campaign"}</button>
+            <button disabled={saving} style={{ ...buttonStyle, background: "#f97316", color: "#fff" }}>{saving ? "Saving..." : editingCampaignId ? "Save campaign" : "Create campaign"}</button>
           </form>
         </Card>
 
@@ -437,7 +486,7 @@ export default function Marketing() {
         <div style={{ overflowX: "auto", marginTop: 12 }}><table style={{ width: "100%", minWidth: 650, borderCollapse: "collapse" }}><thead><tr style={{ textAlign: "left", color: colors.textMuted }}><th>Sales rep</th><th>Code</th><th>Applications</th><th>Approved</th><th>Reward</th></tr></thead><tbody>{referrals.map((row) => <tr key={row.id} style={{ borderTop: `1px solid ${colors.border}` }}><td style={{ padding: 10 }}>{row.sales_rep_name}</td><td><strong>{row.code}</strong></td><td>{row.applications || 0}</td><td>{row.approved_referrals || 0}</td><td>{row.reward_points || 0} points</td></tr>)}</tbody></table></div>
       </Card>
 
-      <Card color={colors.card}><h2 style={{ marginTop: 0 }}>Campaign register</h2>{loading ? <p>Loading...</p> : <div style={{ overflowX: "auto" }}><table style={{ width: "100%", minWidth: 850, borderCollapse: "collapse" }}><thead><tr style={{ textAlign: "left", color: colors.textMuted }}><th>Campaign</th><th>Status</th><th>Audience</th><th>Window</th><th>Revenue</th><th>Action</th></tr></thead><tbody>{campaigns.map((row) => <tr key={row.id} style={{ borderTop: `1px solid ${colors.border}` }}><td style={{ padding: 10 }}><strong>{row.name}</strong><div style={{ fontSize: 12, color: colors.textMuted }}>{row.campaign_code}</div></td><td><StatusPill status={row.status} /></td><td>{row.customer_scope} / {row.placement || "home"}</td><td>{formatDate(row.starts_at)} - {formatDate(row.ends_at)}</td><td>{money(row.attributed_revenue)}</td><td><button onClick={() => toggleCampaign(row)} style={{ ...buttonStyle, padding: "7px 9px", background: row.status === "active" ? "#fef3c7" : "#dcfce7" }}>{row.status === "active" ? "Pause" : "Activate"}</button></td></tr>)}</tbody></table></div>}</Card>
+      <Card color={colors.card}><h2 style={{ marginTop: 0 }}>Campaign register</h2>{loading ? <p>Loading...</p> : <div style={{ overflowX: "auto" }}><table style={{ width: "100%", minWidth: 850, borderCollapse: "collapse" }}><thead><tr style={{ textAlign: "left", color: colors.textMuted }}><th>Campaign</th><th>Status</th><th>Audience</th><th>Window</th><th>Revenue</th><th>Action</th></tr></thead><tbody>{campaigns.map((row) => <tr key={row.id} style={{ borderTop: `1px solid ${colors.border}` }}><td style={{ padding: 10 }}><strong>{row.name}</strong><div style={{ fontSize: 12, color: colors.textMuted }}>{row.campaign_code}</div></td><td><StatusPill status={row.status} /></td><td>{row.customer_scope} / {row.placement || "home"}</td><td>{formatDate(row.starts_at)} - {formatDate(row.ends_at)}</td><td>{money(row.attributed_revenue)}</td><td><div style={{ display: "flex", gap: 7, flexWrap: "wrap" }}><button onClick={() => editCampaign(row)} style={{ ...buttonStyle, padding: "7px 9px", background: "#dbeafe", color: "#1e3a8a" }}>Edit</button><button onClick={() => toggleCampaign(row)} style={{ ...buttonStyle, padding: "7px 9px", background: row.status === "active" ? "#fef3c7" : "#dcfce7" }}>{row.status === "active" ? "Pause" : "Activate"}</button></div></td></tr>)}</tbody></table></div>}</Card>
 
       <Card color={colors.card}><h2 style={{ marginTop: 0 }}>Coupon register</h2><div style={{ overflowX: "auto" }}><table style={{ width: "100%", minWidth: 760, borderCollapse: "collapse" }}><thead><tr style={{ textAlign: "left", color: colors.textMuted }}><th>Coupon</th><th>Status</th><th>Discount</th><th>Minimum</th><th>Uses</th><th>Action</th></tr></thead><tbody>{coupons.map((row) => <tr key={row.id} style={{ borderTop: `1px solid ${colors.border}` }}><td style={{ padding: 10 }}><strong>{row.code}</strong><div style={{ fontSize: 12, color: colors.textMuted }}>{row.name}</div></td><td><StatusPill status={row.status} /></td><td>{row.discount_type === "percentage" ? `${Number(row.discount_value)}%` : money(row.discount_value)}</td><td>{money(row.min_order_amount)}</td><td>{row.redemption_count || 0}</td><td><button onClick={() => toggleCoupon(row)} style={{ ...buttonStyle, padding: "7px 9px", background: row.status === "active" ? "#fef3c7" : "#dcfce7" }}>{row.status === "active" ? "Pause" : "Activate"}</button></td></tr>)}</tbody></table></div></Card>
     </div>
